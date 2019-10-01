@@ -88,7 +88,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
      * progress
      * */
     private LinearLayout progressBar;
-    private TextView progressBarLabel;
+    private TextView progressBarLabel, labelCompany;
 
     private FrameworkClass tbGallery;
 
@@ -113,6 +113,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
         progressBar = findViewById(R.id.progress_bar);
         progressBarLabel = findViewById(R.id.progress_bar_label);
+        labelCompany = findViewById(R.id.label_company);
 
         videoView = findViewById(R.id.video_view);
         imageView = findViewById(R.id.image_view);
@@ -120,6 +121,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     private void objectSetting() {
         videoView.setOnCompletionListener(this);
+        //screen orientation
         scheduleJob();
     }
 
@@ -390,6 +392,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                 return false;
             }
         }
+        showProgressBar(false, null);
         //if new item is download then set playlist back to 0
         if (isNewDisplay) playPosition = 0;
         playList = displayObjectArrayList;
@@ -663,8 +666,36 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         }).start();
     }
 
+    //    --------------------------------------------------full screen-----------------------------------------------------------------------
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            hideSystemUI();
+        }
+    }
+
+    private void hideSystemUI() {
+        // Enables regular immersive mode.
+        // For "lean back" mode, remove SYSTEM_UI_FLAG_IMMERSIVE.
+        // Or for "sticky immersive," replace it with SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        View decorView = getWindow().getDecorView();
+        decorView.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_IMMERSIVE
+                        // Set the content to appear under the system bars so that the
+                        // content doesn't resize when the system bars hide and show.
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        // Hide the nav bar and status bar
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_FULLSCREEN);
+    }
+
     private void showProgressBar(boolean show, String label) {
         progressBar.setVisibility(show ? View.VISIBLE : View.GONE);
+        labelCompany.setVisibility(show ? View.VISIBLE : View.GONE);
         progressBarLabel.setText(label == null ? "Loading..." : label);
     }
 }

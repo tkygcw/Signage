@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#008577</color>
+    <color name="colorPrimaryDark">#00574B</color>
+    <color name="colorAccent">#D81B60</color>
+    <color name="background">#191C23</color>
+    <color name="white">#fff</color>
+    <color name="tranparent_white">#80ffffff</color>
+    <color name="blue">#016AFB</color>
+    <color name="red">#f51d18</color>
+    <color name="light_red">#99FD0905</color>
+    <color name="google_color">#D6492F</color>
+    <color name="transparent">#00000000</color>
+    <color name="transparent_black">#80000000</color>
+    <color name="black">#000000</color>
+    <color name="grey">#524C52</color>
+    <color name="disable_color">#DDDDDD</color>
+    <color name="background_white">#EEEEEE</color>
+    <color name="background_color">#F3F3F5</color>
+    <color name="green">#3CAD3B</color>
+    <color name="line_black">#26000000</color>
+    <color name="tiffany_blue">#00CB99</color>
+    <color name="action_bar_color">#344C56</color>
+    <color name="edit_text_background">#E6E6E6</color>
+    <color name="selected_color">#E2E4FF</color>
+    <color name="purple">#A12EB7</color>
+    <color name="sky_blue">#04B9D2</color>
+    <color name="peach">#C78E7A</color>
+    <color name="light_green">#00CB99</color>
+    <color name="transparent_light_green">#5700CB99</color>
+    <color name="transparent_blue">#57016AFB</color>
+    <color name="transparent_sky_blue">#CD04B9D2</color>
+    <color name="transparent_red">#57FD0905</color>
+</resources>

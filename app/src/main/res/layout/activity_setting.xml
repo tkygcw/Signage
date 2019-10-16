@@ -10,8 +10,8 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/transparent_black"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp">
+        android:paddingStart="?actionBarSize"
+        android:paddingEnd="?actionBarSize">
 
         <TextView
             android:id="@+id/logo"
@@ -34,6 +34,10 @@
             android:textColor="@color/grey"
             android:textColorHint="@color/tranparent_white"
             android:padding="5dp"
+            android:imeOptions="actionDone"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:inputType="text"
             android:hint="Device " />
 
         <TextView

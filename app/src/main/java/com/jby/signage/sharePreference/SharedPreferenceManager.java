@@ -11,6 +11,7 @@ public class SharedPreferenceManager {
 
 
     private static String DeviceID = "device_Id";
+    private static String MerchantID = "merchant_Id";
 
     private static SharedPreferences getSharedPreferences(Context context) {
         String SharedPreferenceFileName = "Signage";
@@ -29,4 +30,11 @@ public class SharedPreferenceManager {
         getSharedPreferences(context).edit().putString(DeviceID, device_Id).apply();
     }
 
+    public static String getMerchantID(Context context) {
+        return getSharedPreferences(context).getString(MerchantID, "default");
+    }
+
+    public static void setMerchantID(Context context, String merchantID) {
+        getSharedPreferences(context).edit().putString(MerchantID, merchantID).apply();
+    }
 }

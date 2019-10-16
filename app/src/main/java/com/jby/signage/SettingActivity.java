@@ -9,7 +9,10 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -37,13 +40,14 @@ import static com.jby.signage.shareObject.CustomToast.CustomToast;
 import static com.jby.signage.shareObject.VariableUtils.device;
 import static com.jby.signage.shareObject.VariableUtils.display;
 
-public class SettingActivity extends AppCompatActivity {
+public class SettingActivity extends AppCompatActivity implements TextView.OnEditorActionListener {
     private TextView versionName;
     private EditText deviceName;
     private GifImageView progressBar;
 
-    private String deviceId;
+    private String deviceId, merchantId;
     private Handler handler;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -60,8 +64,25 @@ public class SettingActivity extends AppCompatActivity {
     }
 
     private void objectSetting() {
+        Window window = getWindow();
+        WindowManager.LayoutParams winParams = window.getAttributes();
+        winParams.flags &= ~WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS;
+        window.setAttributes(winParams);
+        window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+
+        deviceName.setOnEditorActionListener(this);
         isRegister();
         displayVersion();
+    }
+
+    @Override
+    public boolean onEditorAction(TextView textView, int i, KeyEvent keyEvent) {
+        switch (textView.getId()) {
+            case R.id.device_name:
+                checkingInput(null);
+                return true;
+        }
+        return false;
     }
 
     private void isRegister() {
@@ -85,19 +106,21 @@ public class SettingActivity extends AppCompatActivity {
                     JSONObject jsonObject = new JSONObject(response);
                     if (jsonObject.getString("status").equals("1")) {
                         deviceId = jsonObject.getJSONArray("device").getJSONObject(0).getString("device_id");
+                        merchantId = jsonObject.getJSONArray("device").getJSONObject(0).getString("merchant_id");
                         String device = jsonObject.getJSONArray("device").getJSONObject(0).getString("name");
                         /*
-                        * if device is registered before
-                        * */
+                         * if device is registered before
+                         * */
                         if (!device.equals("Unknown")) {
+                            SharedPreferenceManager.setMerchantID(getApplicationContext(), merchantId);
                             SharedPreferenceManager.setDeviceID(getApplicationContext(), deviceId);
                             isRegister();
                         }
                     }
                     /*
-                    * if device serial_no not found
-                    * */
-                    else{
+                     * if device serial_no not found
+                     * */
+                    else {
                         notFoundDialog();
                     }
                 } catch (JSONException e) {
@@ -122,16 +145,15 @@ public class SettingActivity extends AppCompatActivity {
         MySingleton.getmInstance(this).addToRequestQueue(stringRequest);
     }
 
-    public void checkingInput(View view){
-        if(!deviceName.getText().toString().trim().equals("")){
+    public void checkingInput(View view) {
+        if (!deviceName.getText().toString().trim().equals("")) {
             handler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
                     updateDeviceName();
                 }
-            },300);
-        }
-        else{
+            }, 300);
+        } else {
             Toast.makeText(this, "Device name can't be blank!", Toast.LENGTH_SHORT).show();
         }
     }
@@ -148,13 +170,16 @@ public class SettingActivity extends AppCompatActivity {
                     if (jsonObject.getString("status").equals("1")) {
                         Toast.makeText(SettingActivity.this, "Successfully!", Toast.LENGTH_SHORT).show();
                         SharedPreferenceManager.setDeviceID(getApplicationContext(), deviceId);
+                        SharedPreferenceManager.setMerchantID(getApplicationContext(), merchantId);
                         startActivity(new Intent(getApplicationContext(), MainActivity.class));
                         finish();
+                    } else if (jsonObject.getString("status").equals("3")) {
+                        Toast.makeText(SettingActivity.this, "This device is existed!", Toast.LENGTH_SHORT).show();
                     }
                     /*
                      * if device serial_no not found
                      * */
-                    else{
+                    else {
                         notFoundDialog();
                     }
                 } catch (JSONException e) {
@@ -172,6 +197,7 @@ public class SettingActivity extends AppCompatActivity {
                 Map<String, String> params = new HashMap<>();
                 params.put("name", deviceName.getText().toString().trim());
                 params.put("device_id", deviceId);
+                params.put("merchant_id", merchantId);
                 params.put("update", "1");
                 return params;
             }
@@ -183,8 +209,7 @@ public class SettingActivity extends AppCompatActivity {
         final SweetAlertDialog pDialog = new SweetAlertDialog(this, SweetAlertDialog.ERROR_TYPE);
         pDialog.setTitleText("Unknown Device");
         pDialog.setContentText("This device is not registered yet!");
-        pDialog.setConfirmText("I Got it");
-        pDialog.setCancelable(false);
+        pDialog.setConfirmText("I Got IT");
         pDialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
             @Override
             public void onClick(SweetAlertDialog sweetAlertDialog) {
@@ -192,6 +217,7 @@ public class SettingActivity extends AppCompatActivity {
                 pDialog.dismissWithAnimation();
             }
         });
+        pDialog.show();
     }
 
     public static String getSerialNumber() {
@@ -227,7 +253,7 @@ public class SettingActivity extends AppCompatActivity {
     private void displayVersion() {
         try {
             PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
-            String version = "Power By Channel Soft \n" + "Version " + pInfo.versionName;
+            String version = "Power By Channel Soft \n" + "Version " + pInfo.versionName + "\n" + "Serial: " + getSerialNumber();
             versionName.setText(version);
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();

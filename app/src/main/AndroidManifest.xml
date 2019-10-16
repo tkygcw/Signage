@@ -20,7 +20,8 @@
         android:fullBackupContent="true"
         android:usesCleartextTraffic="true">
 
-        <activity android:name=".SettingActivity">
+        <activity android:name=".SettingActivity"
+            android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <action android:name="android.intent.action.VIEW" />

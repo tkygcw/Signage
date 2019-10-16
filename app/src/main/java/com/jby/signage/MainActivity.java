@@ -27,6 +27,7 @@ import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.os.Environment;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -46,6 +47,7 @@ import com.jby.signage.database.ResultCallBack;
 import com.jby.signage.object.DisplayObject;
 import com.jby.signage.alarm.AlarmReceiver;
 import com.jby.signage.shareObject.MySingleton;
+import com.jby.signage.sharePreference.SharedPreferenceManager;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -312,7 +314,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     private void downLoadFile() {
         try {
-            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(galleyPath + displayObjectArrayList.get(checkingPosition).getPath()));
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(galleyPath  + SharedPreferenceManager.getMerchantID(this) + "/" + displayObjectArrayList.get(checkingPosition).getPath()));
             request.setDescription("Downloading");
             request.setTitle("Download");
 
@@ -533,10 +535,9 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
          * */
         alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         try {
-            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + Long.valueOf(displayObjectArrayList.get(checkingPosition).getRefreshTime()), pendingIntent);
-
+            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + Long.valueOf(displayObjectArrayList.get(playPosition).getRefreshTime()), pendingIntent);
         } catch (RuntimeException e) {
-            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 300000, pendingIntent);
+            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 30000, pendingIntent);
         }
     }
 
@@ -567,7 +568,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     }
 
     /*
-     * when timer is fired
+     * when receive broadcast from job scheduler then checking network
      * */
     BroadcastReceiver connection = new BroadcastReceiver() {
         @Override
@@ -590,7 +591,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         tbGallery
                 .new Read("*")
                 .where("status = 1")
-                .orderByDesc("priority")
+                .orderByAsc("priority")
                 .perform(new ResultCallBack.OnRead() {
                     @Override
                     public void readResult(String result) {

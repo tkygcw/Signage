@@ -4,16 +4,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:background="@color/black"
     tools:context=".MainActivity">
-
-    <Button
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:onClick="clearDB"
-        android:text="Clear"
-        android:visibility="gone"
-        tools:layout_editor_absoluteX="103dp"
-        tools:layout_editor_absoluteY="36dp" />
 
     <ImageView
         android:id="@+id/image_view"
@@ -27,7 +19,9 @@
     <VideoView
         android:id="@+id/video_view"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        tools:layout_editor_absoluteX="61dp"
+        tools:layout_editor_absoluteY="94dp" />
 
     <LinearLayout
         android:id="@+id/progress_bar"

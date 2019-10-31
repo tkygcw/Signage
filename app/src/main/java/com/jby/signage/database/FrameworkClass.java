@@ -151,19 +151,23 @@ public class FrameworkClass {
         }
 
         //count row
-        public int count() {
-            int count = 0;
+        public void count(ResultCallBack.OnCount resultCallBack) {
+            int count;
             try {
                 //perform read action
                 Cursor crs = db.rawQuery(query, null);
                 count = crs.getCount();
-                db.close();
+
+                resultCallBack.countResult(count);
                 crs.close();
 
-            } catch (SQLException e) {
+            } catch (Exception e) {
+                e.printStackTrace();
+                Log.e("FrameworkClass","Counting Error!");
+                resultCallBack.countResult(-1);
                 CustomToast(context, "Invalid Parameter!");
             }
-            return count;
+
         }
 
         //perform select action

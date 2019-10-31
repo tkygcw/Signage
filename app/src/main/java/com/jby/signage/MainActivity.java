@@ -18,6 +18,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+
 import android.database.Cursor;
 import android.graphics.BitmapFactory;
 import android.media.MediaPlayer;
@@ -55,25 +56,35 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.lang.reflect.Method;
+
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+
+import java.util.Calendar;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+
+import java.util.TimeZone;
 
 import cn.pedant.SweetAlert.SweetAlertDialog;
 
 import static com.jby.signage.database.CustomSqliteHelper.TB_GALLERY;
 import static com.jby.signage.shareObject.CustomToast.CustomToast;
 import static com.jby.signage.shareObject.VariableUtils.REQUEST_WRITE_EXTERNAL_PERMISSION;
+import static com.jby.signage.shareObject.VariableUtils.device;
 import static com.jby.signage.shareObject.VariableUtils.display;
 import static com.jby.signage.shareObject.VariableUtils.galleyPath;
 
-public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCompletionListener {
+public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCompletionListener, MediaPlayer.OnErrorListener {
     /*
      * download purpose
      * */
     private BroadcastReceiver downloadReceiver;
     private DownloadManager manager;
     private File directory = new File(Environment.getExternalStorageDirectory() + "/Signage/");
+    private String lastDownloadPath = "";
     /*
      * display list
      * */
@@ -82,6 +93,9 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     private int playPosition = 0;
     private boolean timerRunning = false;
     private String checkingTime;
+    private long refreshTime = 5000;
+    private String shutDownTimer = "";
+
     /*
      * connection
      * */
@@ -96,6 +110,14 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     private ImageView imageView;
     private VideoView videoView;
+    /*
+     * control timer purpose
+     * */
+    private String timerType = "refresh_timer";
+    /*
+     * count down timer
+     * */
+    private boolean isNewDisplay = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -123,8 +145,10 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     private void objectSetting() {
         videoView.setOnCompletionListener(this);
+        videoView.setOnErrorListener(this);
         //screen orientation
         scheduleJob();
+
     }
 
     /*
@@ -151,7 +175,8 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                         REQUEST_WRITE_EXTERNAL_PERMISSION);
             }
         } else {
-            requestSchedule();
+            readLocalDisplay();
+            setRefreshTimer();
         }
     }
 
@@ -160,7 +185,8 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         if (requestCode == REQUEST_WRITE_EXTERNAL_PERMISSION) {
             if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Permission Granted
-                requestSchedule();
+//                requestSchedule();
+                setRefreshTimer();
                 onStart();
             } else {
                 // Permission Denied
@@ -187,6 +213,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         dialog.show();
     }
 
+    /*-----------------------------------------------------------------------------------donwload, arrange schedule control-------------------------------------------------------------------------*/
     /*
      * request schedule
      * */
@@ -198,32 +225,56 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                     JSONObject jsonObject = new JSONObject(response);
                     if (jsonObject.getString("status").equals("1")) {
                         displayObjectArrayList.clear();
+                        /*
+                         * default display
+                         * */
+                        Log.d("hahahaha", "jsonObject: " + jsonObject);
                         JSONArray jsonArray = jsonObject.getJSONArray("display");
                         for (int i = 0; i < jsonArray.length(); i++) {
                             displayObjectArrayList.add(new DisplayObject(
+                                    jsonArray.getJSONObject(i).getString("link_id"),
                                     jsonArray.getJSONObject(i).getString("path"),
                                     jsonArray.getJSONObject(i).getString("timer"),
                                     jsonArray.getJSONObject(i).getString("priority"),
                                     jsonArray.getJSONObject(i).getString("gallery_id"),
                                     jsonArray.getJSONObject(i).getString("display_type"),
-                                    jsonArray.getJSONObject(i).getString("refresh_time"),
-                                    "0"
+                                    "0",
+                                    "default"
                             ));
                         }
+                        /*
+                         * refresh time
+                         * */
+                        refreshTime = Long.valueOf(jsonObject.getString("refresh_time"));
+                        /*
+                         * shut down time
+                         * */
+                        shutDownTimer = jsonObject.getString("shut_down_time");
+                        setShutDownTimer();
+                        /*
+                         * add next display list and date
+                         * */
+                        addNextDisplay(jsonObject);
+
                         if (displayObjectArrayList.size() > 0) {
                             /*
                              * preset every status into 0
                              * */
+                            Log.d("hahahaha", "Update status here!");
                             tbGallery.new Update("status", "0")
                                     .perform(new ResultCallBack.OnUpdate() {
                                         @Override
                                         public void updateResult(String status) {
+                                            Log.d("hahahaha", "Updated!");
                                             checkingPosition = -1;
                                             checkFileExistence();
                                         }
                                     });
                         }
-                    } else showProgressBar(true, "Data Not Found!");
+                    } else {
+                        showProgressBar(true, "Data Not Found!");
+                        clearAll();
+                    }
 
                 } catch (JSONException e) {
                     e.printStackTrace();
@@ -239,11 +290,43 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             protected Map<String, String> getParams() {
                 Map<String, String> params = new HashMap<>();
                 params.put("serial_no", getSerialNumber());
+                params.put("timer_type", timerType);
+                params.put("next_display_date", SharedPreferenceManager.getNextDisplayDate(MainActivity.this));
                 params.put("read", "1");
                 return params;
             }
         };
         MySingleton.getmInstance(this).addToRequestQueue(stringRequest);
+    }
+
+    private void addNextDisplay(JSONObject jsonObject) {
+        try {
+            /*
+             * set next display date
+             * */
+            if (!jsonObject.getString("next_display_date").equals("")) {
+                SharedPreferenceManager.setNextDisplayDate(this, jsonObject.getString("next_display_date"));
+                //set timer
+                setChangeNextDisplayTimer();
+            }
+            /*
+             * next display list
+             * */
+            JSONArray jsonArray = jsonObject.getJSONArray("next_display");
+            for (int i = 0; i < jsonArray.length(); i++) {
+                displayObjectArrayList.add(new DisplayObject(
+                        jsonArray.getJSONObject(i).getString("link_id"),
+                        jsonArray.getJSONObject(i).getString("path"),
+                        jsonArray.getJSONObject(i).getString("timer"),
+                        jsonArray.getJSONObject(i).getString("priority"),
+                        jsonArray.getJSONObject(i).getString("gallery_id"),
+                        jsonArray.getJSONObject(i).getString("display_type"),
+                        "0",
+                        "next"
+                ));
+            }
+        } catch (JSONException e) {
+        }
     }
 
     private void checkFileExistence() {
@@ -254,67 +337,100 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         if (checkingPosition < displayObjectArrayList.size()) {
             checkingTime = (String) android.text.format.DateFormat.format("yyyy-MM-dd hh:mm:ss", new java.util.Date());
             /*
-             * checking from local database
+             * checking from local database (prevent duplicate download purpose)
              * */
             tbGallery.new Read("gallery_id")
                     .where("gallery_id = " + displayObjectArrayList.get(checkingPosition).getGalleryID())
                     .perform(new ResultCallBack.OnRead() {
                         @Override
                         public void readResult(String result) {
+                            Log.d("hahahaha", "read here!");
                             /*
                              * file not found (new file) so need arrange to download
                              * */
                             if (result.equals("Nothing") || result.equals("Fail")) {
-                                downLoadFile();
+                                //prevent dl twice when (refresh timer + next timer) fire together
+                                if (!lastDownloadPath.equals(displayObjectArrayList.get(checkingPosition).getPath())) {
+                                    Log.d("hahahaha", "Download here!");
+                                    downLoadFile();
+                                }
                             }
                             /*
                              * existing file
                              * */
                             else {
+                                Log.d("hahahaha", "Existing item!");
                                 /*
-                                 * make a update
+                                 * if a gallery is use in both default & next display then we have to save it separately
                                  * */
-                                tbGallery.new Update("priority, display_type, timer, refresh_time, status, updated_at",
-                                        displayObjectArrayList.get(checkingPosition).getPriority() + "," +
-                                                displayObjectArrayList.get(checkingPosition).getDisplayType() + "," +
-                                                displayObjectArrayList.get(checkingPosition).getTimer() + "," +
-                                                displayObjectArrayList.get(checkingPosition).getRefreshTime() + "," +
-                                                "1" + "," +
-                                                checkingTime)
-                                        .where("gallery_id = ?", displayObjectArrayList.get(checkingPosition).getGalleryID())
-                                        /*
-                                         * call back
-                                         * */
-                                        .perform(new ResultCallBack.OnUpdate() {
+                                tbGallery.new Read("gallery_id")
+                                        .where("link_id ='" + displayObjectArrayList.get(checkingPosition).getLinkID() + "' AND gallery_id ='" + displayObjectArrayList.get(checkingPosition).getGalleryID() + "' AND default_display='" + displayObjectArrayList.get(checkingPosition).getDefaultDisplay() + "'")
+                                        .perform(new ResultCallBack.OnRead() {
                                             @Override
-                                            public void updateResult(String status) {
-                                                displayObjectArrayList.get(checkingPosition).setStatus("1");
-                                                checkFileExistence();
-                                                /*
-                                                 * check is everything downloaded
-                                                 * */
-                                                if (allDownloaded(false)) play();
+                                            public void readResult(String result) {
+                                                if (result.equals("Nothing") || result.equals("Fail")) {
+                                                    addGalleryIntoLocal();
+                                                } else {
+                                                    /*
+                                                     * make a update
+                                                     * */
+                                                    tbGallery.new Update("priority, display_type, timer, status, updated_at",
+                                                            displayObjectArrayList.get(checkingPosition).getPriority() + "," +
+                                                                    displayObjectArrayList.get(checkingPosition).getDisplayType() + "," +
+                                                                    displayObjectArrayList.get(checkingPosition).getTimer() + "," +
+                                                                    "1" + "," +
+                                                                    checkingTime)
+                                                            .where("gallery_id = ? AND default_display = ?", displayObjectArrayList.get(checkingPosition).getGalleryID() + "," + displayObjectArrayList.get(checkingPosition).getDefaultDisplay())
+                                                            .perform(new ResultCallBack.OnUpdate() {
+                                                                @Override
+                                                                public void updateResult(String status) {
+                                                                    displayObjectArrayList.get(checkingPosition).setStatus("1");
+                                                                    /*
+                                                                     * check is everything downloaded
+                                                                     * */
+                                                                    if (allDownloaded(false))
+                                                                        play();
+
+                                                                    checkFileExistence();
+                                                                }
+                                                            });
+                                                }
                                             }
                                         });
+
                             }
                         }
                     });
         }
     }
 
-    public void clearDB(View view) {
+    public void clearAll() {
         tbGallery.new Delete().perform(new ResultCallBack.OnDelete() {
             @Override
             public void deleteResult(String status) {
+                playList.clear();
                 displayObjectArrayList.clear();
-                Toast.makeText(MainActivity.this, "Clear Successfully!", Toast.LENGTH_SHORT).show();
+                videoView.setVisibility(View.GONE);
+                imageView.setVisibility(View.GONE);
+                /*
+                 * delete local file
+                 * */
+                File dir = new File(directory.getAbsolutePath());
+                if (dir.exists() && dir.isDirectory()) {
+                    String[] children = dir.list();
+                    for (int i = 0; i < children.length; i++) {
+                        new File(dir, children[i]).delete();
+                    }
+                }
             }
         });
     }
 
     private void downLoadFile() {
         try {
-            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(galleyPath  + SharedPreferenceManager.getMerchantID(this) + "/" + displayObjectArrayList.get(checkingPosition).getPath()));
+            lastDownloadPath = displayObjectArrayList.get(checkingPosition).getPath();
+
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(galleyPath + SharedPreferenceManager.getMerchantID(this) + "/" + displayObjectArrayList.get(checkingPosition).getPath()));
             request.setDescription("Downloading");
             request.setTitle("Download");
 
@@ -348,35 +464,8 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                 if (cursor.moveToFirst()) {
                     int status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
                     if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                        // download is successful
-                        tbGallery.new Create("path, priority, gallery_id, display_type, timer, refresh_time, status, created_at, updated_at",
-                                new String[]{
-                                        displayObjectArrayList.get(checkingPosition).getPath(),
-                                        displayObjectArrayList.get(checkingPosition).getPriority(),
-                                        displayObjectArrayList.get(checkingPosition).getGalleryID(),
-                                        displayObjectArrayList.get(checkingPosition).getDisplayType(),
-                                        displayObjectArrayList.get(checkingPosition).getTimer(),
-                                        displayObjectArrayList.get(checkingPosition).getRefreshTime(),
-                                        "1",
-                                        checkingTime,
-                                        checkingTime})
-                                /*
-                                 * call back
-                                 * */
-                                .perform(new ResultCallBack.OnCreate() {
-                                    @Override
-                                    public void createResult(String status) {
-                                        if (status.equals("Success")) {
-                                            displayObjectArrayList.get(checkingPosition).setStatus("1");
-                                            checkFileExistence();
-                                            /*
-                                             * check is everything downloaded
-                                             * */
-                                            if (allDownloaded(true)) play();
-                                        }
-                                    }
-                                });
-
+                        // add gallery into local database when download finished
+                        addGalleryIntoLocal();
                     } else {
                         // download is assumed cancelled
                     }
@@ -388,7 +477,46 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         registerReceiver(downloadReceiver, filter);
     }
 
+    private void addGalleryIntoLocal() {
+        try {
+            tbGallery.new Create("link_id, path, priority, gallery_id, display_type, timer, status, default_display, created_at, updated_at",
+                    new String[]{
+                            displayObjectArrayList.get(checkingPosition).getLinkID(),
+                            displayObjectArrayList.get(checkingPosition).getPath(),
+                            displayObjectArrayList.get(checkingPosition).getPriority(),
+                            displayObjectArrayList.get(checkingPosition).getGalleryID(),
+                            displayObjectArrayList.get(checkingPosition).getDisplayType(),
+                            displayObjectArrayList.get(checkingPosition).getTimer(),
+                            "1",
+                            displayObjectArrayList.get(checkingPosition).getDefaultDisplay(),
+                            checkingTime,
+                            checkingTime})
+                    /*
+                     * call back
+                     * */
+                    .perform(new ResultCallBack.OnCreate() {
+                        @Override
+                        public void createResult(String status) {
+                            if (status.equals("Success")) {
+                                displayObjectArrayList.get(checkingPosition).setStatus("1");
+                                /*
+                                 * check is everything downloaded then play
+                                 * */
+                                if (allDownloaded(true)) play();
+                                checkFileExistence();
+                            }
+                        }
+                    });
+        } catch (Exception e) {
+            Log.e("MainActivity", "Checking position out of bound!");
+        }
+    }
+
     private boolean allDownloaded(boolean isNewDisplay) {
+        Log.d("hahahaha", "Checking position!!!!" + checkingPosition);
+        for (int i = 0; i < displayObjectArrayList.size(); i++) {
+            Log.d("hahahaha", "status: " + displayObjectArrayList.get(i).getStatus() + "  path: " + displayObjectArrayList.get(i).getPath() + "  display: " + displayObjectArrayList.get(i).getDefaultDisplay());
+        }
         for (int i = 0; i < displayObjectArrayList.size(); i++) {
             if (displayObjectArrayList.get(i).getStatus().equals("0")) {
                 return false;
@@ -397,12 +525,33 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         showProgressBar(false, null);
         //if new item is download then set playlist back to 0
         if (isNewDisplay) playPosition = 0;
-        playList = displayObjectArrayList;
+        //set playlist
+        playList = setPlayList();
         //delete file
-        deleteUnusedFile();
+        if (isConnected) deleteUnusedFile();
         return true;
     }
 
+    private ArrayList<DisplayObject> setPlayList() {
+        ArrayList<DisplayObject> arrayList = new ArrayList<>();
+        for (int i = 0; i < displayObjectArrayList.size(); i++) {
+            if (displayObjectArrayList.get(i).getDefaultDisplay().equals("default")) {
+                arrayList.add(new DisplayObject(
+                        displayObjectArrayList.get(i).getLinkID(),
+                        displayObjectArrayList.get(i).getPath(),
+                        displayObjectArrayList.get(i).getTimer(),
+                        displayObjectArrayList.get(i).getPriority(),
+                        displayObjectArrayList.get(i).getGalleryID(),
+                        displayObjectArrayList.get(i).getDisplayType(),
+                        "",
+                        ""
+                ));
+            }
+        }
+        return arrayList;
+    }
+
+    /*-----------------------------------------------------------------------------------playlist control-------------------------------------------------------------------------*/
     /*
      * playlist control
      * */
@@ -412,45 +561,61 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
          * */
         if (!videoView.isPlaying() && !timerRunning) {
             try {
-                //screen orientation
-                setRequestedOrientation(playList.get(playPosition).getDisplayType().equals("0") ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-                //path
-                String filePath = directory.getAbsolutePath() + "/" + playList.get(playPosition).getPath();
-                if (isMP4()) {
-                    /*
-                     * if file is downloaded then play
-                     * */
-                    if (playList.get(playPosition).getStatus().equals("1")) {
+                if (!isNewDisplay) {
+                    //screen orientation
+                    setRequestedOrientation(playList.get(playPosition).getDisplayType().equals("0") ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                    //path
+                    String filePath = directory.getAbsolutePath() + "/" + playList.get(playPosition).getPath();
+                    if (isMP4()) {
                         videoView.setVideoPath(filePath);
                         videoView.start();
-                    }
-                } else {
-                    timerRunning = true;
-                    imageView.setImageBitmap(BitmapFactory.decodeFile(filePath));
-                    videoView.setVisibility(View.GONE);
+                    } else {
+                        timerRunning = true;
+                        imageView.setImageBitmap(BitmapFactory.decodeFile(filePath));
+                        Log.d("haha", "play time: " + playList.get(playPosition).getTimer());
+                        new CountDownTimer(Long.valueOf(playList.get(playPosition).getTimer()), 1000) {
+                            @Override
+                            public void onTick(long millisUntilFinished) {
+                            }
 
-                    new CountDownTimer(10000, Long.valueOf(playList.get(playPosition).getTimer())) {
+                            @Override
+                            public void onFinish() {
+                                timerRunning = false;
+                                checkPlayPosition();
+                            }
+                        }.start();
+                    }
+                }
+                /*
+                 * count down timer
+                 * */
+                else {
+                    timerRunning = true;
+                    videoView.setVisibility(View.GONE);
+                    imageView.setVisibility(View.GONE);
+                    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+
+                    new CountDownTimer(5000, 1000) {
                         @Override
                         public void onTick(long millisUntilFinished) {
+                            showProgressBar(true, "New file will be display in " + String.valueOf(millisUntilFinished / 1000));
                         }
 
                         @Override
                         public void onFinish() {
                             timerRunning = false;
-                            checkPlayPosition();
+                            isNewDisplay = false;
+                            playPosition = 0;
+                            showProgressBar(false, "");
+                            play();
                         }
                     }.start();
                 }
+
             } catch (IndexOutOfBoundsException e) {
                 playPosition = 0;
             }
         }
-    }
-
-    @Override
-    public void onCompletion(MediaPlayer mediaPlayer) {
-        checkPlayPosition();
-
     }
 
     private void checkPlayPosition() {
@@ -472,27 +637,46 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         }
     }
 
+    /*-----------------------------------------------------------------------------------video view purpose-------------------------------------------------------------------------*/
+    @Override
+    public void onCompletion(MediaPlayer mediaPlayer) {
+        checkPlayPosition();
+    }
+
+    @Override
+    public boolean onError(MediaPlayer mediaPlayer, int i, int i1) {
+        return true;
+    }
+
     @Override
     protected void onPause() {
         super.onPause();
-        if (downloadReceiver != null) {
-            unregisterReceiver(downloadReceiver);
-            unregisterReceiver(alarmManger);
-            //network control
-            unregisterReceiver(connection);
-            stopService(new Intent(this, NetworkSchedulerService.class));
-        }
+        //        Log.d("hahahaha", "OnPause!!");
+        //        try {
+//            if (downloadReceiver != null) {
+//                unregisterReceiver(downloadReceiver);
+//                unregisterReceiver(alarmManger);
+//                //network control
+//                unregisterReceiver(connection);
+//                stopService(new Intent(this, NetworkSchedulerService.class));
+//            }
+//        } catch (Exception e) {
+//            Log.d("hahahaha", "OnPause Error");
+//            e.printStackTrace();
+//        }
     }
 
     @Override
     protected void onStart() {
         super.onStart();
+        Log.d("hahahaha", "OnStart!!");
         setDownloadReceiver();
         registerReceiver(alarmManger, new IntentFilter("alarmManager"));
         //network
         registerReceiver(connection, new IntentFilter("connection"));
         Intent startServiceIntent = new Intent(this, NetworkSchedulerService.class);
         startService(startServiceIntent);
+
     }
 
     public static String getSerialNumber() {
@@ -523,21 +707,88 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     /*-----------------------------------------------------------------------------timer-----------------------------------------------------------------------------------*/
     /*
-     * timer setting
+     * set time interval for device to request from cloud
      * */
     private void setRefreshTimer() {
         //alarm setting
         AlarmManager alarmManager;
         Intent alarmIntent = new Intent(this, AlarmReceiver.class);
-        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, alarmIntent, PendingIntent.FLAG_CANCEL_CURRENT);
+        alarmIntent.putExtra("alarm_id", "refresh_timer");
+
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 1, alarmIntent, PendingIntent.FLAG_UPDATE_CURRENT);
         /*
          * time setting
          * */
         alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         try {
-            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + Long.valueOf(displayObjectArrayList.get(playPosition).getRefreshTime()), pendingIntent);
+            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + refreshTime, pendingIntent);
         } catch (RuntimeException e) {
             alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 30000, pendingIntent);
+        }
+    }
+
+    /*
+     * set timer to change display (default to next display)
+     * */
+    private void setChangeNextDisplayTimer() {
+        //alarm setting
+        AlarmManager alarmManager;
+
+        Intent alarmIntent = new Intent(this, AlarmReceiver.class);
+        alarmIntent.putExtra("alarm_id", "change_next_timer");
+
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 2, alarmIntent, 0);
+
+        try {
+            SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+            formatter.setTimeZone(TimeZone.getTimeZone("GMT+8"));
+            Date date = formatter.parse(SharedPreferenceManager.getNextDisplayDate(this));
+            /*
+             * time setting
+             * */
+            alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            try {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, date.getTime(), pendingIntent);
+            } catch (RuntimeException e) {
+            }
+        } catch (Exception e) {
+            Log.d("MainActivity", "unable to set next display timer!");
+            e.printStackTrace();
+        }
+    }
+
+    /*
+     * set shut down timer
+     * */
+    private void setShutDownTimer() {
+        //alarm setting
+        AlarmManager alarmManager;
+        Intent alarmIntent = new Intent(this, AlarmReceiver.class);
+        alarmIntent.putExtra("alarm_id", "shut_down_timer");
+
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 3, alarmIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+        try {
+            Calendar cal = Calendar.getInstance();
+            SimpleDateFormat formatter = new SimpleDateFormat("HH:mm");
+
+            Date currentTime = formatter.parse(formatter.format(cal.getTime()));
+            Date shutDownTime = formatter.parse(shutDownTimer);
+
+            if (currentTime.before(shutDownTime) || currentTime == shutDownTime) {
+                String[] timer = shutDownTimer.split(":");
+                cal.set(Calendar.HOUR_OF_DAY, Integer.parseInt(timer[0]));
+                cal.set(Calendar.MINUTE, Integer.parseInt(timer[1]));
+
+                alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                alarmManager.set(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), pendingIntent);
+            } else {
+                Log.d("MainActivity", "Shut Down Time is over!");
+            }
+
+        } catch (Exception e) {
+            Log.d("MainActivity", "unable to set shut down timer");
+            e.printStackTrace();
         }
     }
 
@@ -547,6 +798,15 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     BroadcastReceiver alarmManger = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            Log.d("MainActivity", "alarm id: " + intent.getExtras().getString("alarm_id"));
+            if (intent.getExtras().getString("alarm_id").equals("change_next_timer")) {
+                timerType = "change_next_timer";
+            } else if (intent.getExtras().getString("alarm_id").equals("refresh_timer")) {
+                timerType = "refresh_timer";
+            } else {
+                shutDown();
+            }
+
             requestSchedule();
             if (isConnected) setRefreshTimer();
         }
@@ -573,13 +833,13 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     BroadcastReceiver connection = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            Log.d("MainActivity", "Current Connection Status: " + intent.getExtras().getBoolean("isConnected"));
             showProgressBar(true, null);
             isConnected = intent.getExtras().getBoolean("isConnected");
             if (isConnected) {
+                refreshTime = 5000;
                 //write permission and request from cloud
                 requestWritePermission();
-                //timer
-                setRefreshTimer();
             } else {
                 readLocalDisplay();
             }
@@ -591,10 +851,10 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         tbGallery
                 .new Read("*")
                 .where("status = 1")
-                .orderByAsc("priority")
                 .perform(new ResultCallBack.OnRead() {
                     @Override
                     public void readResult(String result) {
+                        Log.d("haha", "local result:: " + result);
                         if (result.equals("Nothing") || result.equals("Fail")) {
                             showProgressBar(true, "Data Not Found!");
                         } else {
@@ -603,13 +863,14 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                                 JSONArray jsonArray = new JSONObject(result).getJSONArray("result");
                                 for (int i = 0; i < jsonArray.length(); i++) {
                                     displayObjectArrayList.add(new DisplayObject(
+                                            jsonArray.getJSONObject(i).getString("link_id"),
                                             jsonArray.getJSONObject(i).getString("path"),
                                             jsonArray.getJSONObject(i).getString("timer"),
                                             jsonArray.getJSONObject(i).getString("priority"),
                                             jsonArray.getJSONObject(i).getString("gallery_id"),
                                             jsonArray.getJSONObject(i).getString("display_type"),
-                                            jsonArray.getJSONObject(i).getString("refresh_time"),
-                                            jsonArray.getJSONObject(i).getString("status")
+                                            jsonArray.getJSONObject(i).getString("status"),
+                                            jsonArray.getJSONObject(i).getString("default_display")
                                     ));
                                 }
                                 /*
@@ -626,45 +887,67 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     /*---------------------------------------------------------------------------delete unused display-----------------------------------------------------------------------------------*/
     private void deleteUnusedFile() {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                tbGallery.new Read("gallery_id, path")
-                        .where("status != 1")
-                        .perform(new ResultCallBack.OnRead() {
-                            @Override
-                            public void readResult(String result) {
-                                /*
-                                 * if item found
-                                 * */
-                                if (!result.equals("Nothing") && !result.equals("Fail")) {
-                                    try {
-                                        JSONArray jsonArray = new JSONObject(result).getJSONArray("result");
-                                        File dir = new File(directory.getAbsolutePath());
-                                        /*
-                                         * check directory existence
-                                         * */
-                                        if (dir.exists() && dir.isDirectory())
-                                            for (int i = 0; i < jsonArray.length(); i++) {
-                                                new File(dir, jsonArray.getJSONObject(i).getString("path")).delete();
-                                                /*
-                                                 * delete from local database
-                                                 * */
-                                                tbGallery.new Delete().where("gallery_id = ?", jsonArray.getJSONObject(i).getString("gallery_id")).perform(new ResultCallBack.OnDelete() {
-                                                    @Override
-                                                    public void deleteResult(String status) {
+        Log.d("hahahaha", "Delete method here!");
+        /*
+         * delete file from directory
+         * */
+        File dir = new File(directory.getAbsolutePath());
+        boolean delete;
 
-                                                    }
-                                                });
-                                            }
-                                    } catch (Exception e) {
-                                        e.printStackTrace();
-                                    }
-                                }
-                            }
-                        });
+        if (dir.exists() && dir.isDirectory()) {
+            String[] content = dir.list();
+
+            for (String gallery : content) {
+                delete = true;
+                for (int j = 0; j < displayObjectArrayList.size(); j++) {
+                    if (gallery.equals(displayObjectArrayList.get(j).getPath())) delete = false;
+                }
+                if (delete) {
+                    Log.d("hahahaha", "delete item: " + gallery);
+                    new File(dir, gallery).delete();
+                    isNewDisplay = true;
+                }
             }
-        }).start();
+        }
+
+        /*
+         * delete local database
+         * */
+        tbGallery.new Delete().where("status = ?", "0")
+                .perform(new ResultCallBack.OnDelete() {
+                    @Override
+                    public void deleteResult(String status) {
+                        Log.d("hahahaha", "delete success!");
+                        /*
+                         * check in
+                         * */
+                        checkIn();
+                    }
+                });
+    }
+
+    //    --------------------------------------------------check in after finished download, arrange schedule-----------------------------------------------------------------------
+    public void checkIn() {
+        StringRequest stringRequest = new StringRequest(Request.Method.POST, device, new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                CustomToast(getApplicationContext(), "Unable Connect to Api!");
+            }
+        }) {
+            @Override
+            protected Map<String, String> getParams() {
+                Map<String, String> params = new HashMap<>();
+                params.put("check_in", "1");
+                params.put("device_id", SharedPreferenceManager.getDeviceID(MainActivity.this));
+                return params;
+            }
+        };
+        MySingleton.getmInstance(this).addToRequestQueue(stringRequest);
     }
 
     //    --------------------------------------------------full screen-----------------------------------------------------------------------
@@ -698,5 +981,17 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         progressBar.setVisibility(show ? View.VISIBLE : View.GONE);
         labelCompany.setVisibility(show ? View.VISIBLE : View.GONE);
         progressBarLabel.setText(label == null ? "Loading..." : label);
+    }
+
+    //    --------------------------------------------------full screen-----------------------------------------------------------------------
+    private void shutDown() {
+        try {
+            Process proc = Runtime.getRuntime()
+                    .exec(new String[]{"su", "-c", "reboot -p"});
+            proc.waitFor();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            Toast.makeText(this, "Your device is not able to shut down!", Toast.LENGTH_SHORT).show();
+        }
     }
 }

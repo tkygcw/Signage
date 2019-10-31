@@ -5,6 +5,10 @@ public interface ResultCallBack {
         void createResult(String status);
     }
 
+    interface OnCount {
+        void countResult(int count);
+    }
+
     interface OnRead {
         void readResult(String result);
     }

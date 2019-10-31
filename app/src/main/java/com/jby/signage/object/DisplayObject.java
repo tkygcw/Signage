@@ -1,16 +1,21 @@
 package com.jby.signage.object;
 
 public class DisplayObject {
-    private String path, timer, priority, galleryID, status, displayType, refreshTime;
+    private String linkID, path, timer, priority, galleryID, status, displayType, refreshTime, defaultDisplay;
 
-    public DisplayObject(String path, String timer, String priority, String galleryID, String displayType, String refreshTime, String status) {
+    public DisplayObject(String linkID, String path, String timer, String priority, String galleryID, String displayType, String status, String defaultDisplay) {
+        this.linkID = linkID;
         this.path = path;
         this.timer = timer;
         this.priority = priority;
         this.galleryID = galleryID;
         this.displayType = displayType;
-        this.refreshTime = refreshTime;
         this.status = status;
+        this.defaultDisplay = defaultDisplay;
+    }
+
+    public String getLinkID() {
+        return linkID;
     }
 
     public String getPath() {
@@ -37,8 +42,8 @@ public class DisplayObject {
         return displayType;
     }
 
-    public String getRefreshTime() {
-        return refreshTime;
+    public String getDefaultDisplay() {
+        return defaultDisplay;
     }
 
     public void setStatus(String status) {

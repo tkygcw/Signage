@@ -12,6 +12,7 @@ public class SharedPreferenceManager {
 
     private static String DeviceID = "device_Id";
     private static String MerchantID = "merchant_Id";
+    private static String NextDisplayDate = "next_display_date";
 
     private static SharedPreferences getSharedPreferences(Context context) {
         String SharedPreferenceFileName = "Signage";
@@ -36,5 +37,13 @@ public class SharedPreferenceManager {
 
     public static void setMerchantID(Context context, String merchantID) {
         getSharedPreferences(context).edit().putString(MerchantID, merchantID).apply();
+    }
+
+    public static String getNextDisplayDate(Context context) {
+        return getSharedPreferences(context).getString(NextDisplayDate, "default");
+    }
+
+    public static void setNextDisplayDate(Context context, String nextDisplayDate) {
+        getSharedPreferences(context).edit().putString(NextDisplayDate, nextDisplayDate).apply();
     }
 }

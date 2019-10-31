@@ -4,7 +4,7 @@ public class VariableUtils {
     public static int REQUEST_UPDATE = 1;
     public static int REQUEST_WRITE_EXTERNAL_PERMISSION = 2;
 
-    private static String domain = "https://www.yofu.my/";
+    private static String domain = "https://www.channelsoft.com.my/";
     private static String prefix = "signage/";
     /*
     * api

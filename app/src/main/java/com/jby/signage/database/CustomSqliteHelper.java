@@ -10,19 +10,20 @@ import android.database.sqlite.SQLiteOpenHelper;
 
 public class CustomSqliteHelper extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "Signage";
-    private static final int DATABASE_VERSION = 8;
+    private static final int DATABASE_VERSION = 12;
 
     public static final String TB_GALLERY = "tb_gallery";
 
     private static final String CREATE_TB_GALLERY = "CREATE TABLE " + TB_GALLERY +
             "(local_gallery_id INTEGER PRIMARY KEY," +
+            "link_id INTEGER," +
             "gallery_id INTEGER," +
             "path Text," +
             "priority Text," +
             "timer Text," +
-            "refresh_time Text," +
             "display_type Text," +
             "status INTEGER DEFAULT 0," +
+            "default_display Text," +
             "created_at Text," +
             "updated_at Text)";
 

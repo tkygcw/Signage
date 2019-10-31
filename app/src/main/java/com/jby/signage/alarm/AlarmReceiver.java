@@ -11,9 +11,9 @@ public class AlarmReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        Log.d("haha","alarm fired!");
         Bundle bundle = new Bundle();
         bundle.putBoolean("refresh", true);
+        bundle.putString("alarm_id", intent.getStringExtra("alarm_id"));
 
         Intent i = new Intent("alarmManager");
         i.putExtras(bundle);

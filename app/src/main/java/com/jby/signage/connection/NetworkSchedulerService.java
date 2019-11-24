@@ -9,8 +9,7 @@ import android.util.Log;
 
 import static com.jby.signage.shareObject.VariableUtils.CONNECTIVITY_ACTION;
 
-public class NetworkSchedulerService extends JobService implements
-        ConnectivityReceiver.ConnectivityReceiverListener {
+public class NetworkSchedulerService extends JobService implements ConnectivityReceiver.ConnectivityReceiverListener {
 
     private static final String TAG = NetworkSchedulerService.class.getSimpleName();
 
@@ -60,4 +59,7 @@ public class NetworkSchedulerService extends JobService implements
 
         sendBroadcast(i);
     }
+
+
+
 }

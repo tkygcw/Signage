@@ -41,6 +41,7 @@ import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.facebook.stetho.Stetho;
+import com.jby.signage.connection.NetworkAccessChecker;
 import com.jby.signage.connection.NetworkSchedulerService;
 import com.jby.signage.database.CustomSqliteHelper;
 import com.jby.signage.database.FrameworkClass;
@@ -57,6 +58,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.lang.reflect.Method;
 
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 
@@ -67,6 +69,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import java.util.TimeZone;
+import java.util.concurrent.TimeUnit;
 
 import cn.pedant.SweetAlert.SweetAlertDialog;
 
@@ -166,13 +169,11 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                                 public void onClick(SweetAlertDialog sweetAlertDialog) {
                                     requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_WRITE_EXTERNAL_PERMISSION);
                                     sweetAlertDialog.dismissWithAnimation();
-
                                 }
                             });
                     return;
                 }
-                requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                        REQUEST_WRITE_EXTERNAL_PERMISSION);
+                requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_WRITE_EXTERNAL_PERMISSION);
             }
         } else {
             readLocalDisplay();
@@ -185,7 +186,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         if (requestCode == REQUEST_WRITE_EXTERNAL_PERMISSION) {
             if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Permission Granted
-//                requestSchedule();
                 setRefreshTimer();
                 onStart();
             } else {
@@ -228,7 +228,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                         /*
                          * default display
                          * */
-                        Log.d("hahahaha", "jsonObject: " + jsonObject);
+                        Log.d("MainActivity", "alarm id: " + jsonObject);
                         JSONArray jsonArray = jsonObject.getJSONArray("display");
                         for (int i = 0; i < jsonArray.length(); i++) {
                             displayObjectArrayList.add(new DisplayObject(
@@ -260,7 +260,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                             /*
                              * preset every status into 0
                              * */
-                            Log.d("hahahaha", "Update status here!");
                             tbGallery.new Update("status", "0")
                                     .perform(new ResultCallBack.OnUpdate() {
                                         @Override
@@ -272,17 +271,25 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                                     });
                         }
                     } else {
+                        //set refresh time to default when no data
+                        refreshTime = 5000;
                         showProgressBar(true, "Data Not Found!");
                         clearAll();
                     }
-
+                    setRefreshTimer();
                 } catch (JSONException e) {
                     e.printStackTrace();
+                    //set refresh time to default
+                    refreshTime = 5000;
+                    setRefreshTimer();
                 }
             }
         }, new Response.ErrorListener() {
             @Override
             public void onErrorResponse(VolleyError error) {
+                //set refresh time to default when error
+                refreshTime = 5000;
+                setRefreshTimer();
                 CustomToast(getApplicationContext(), "Unable Connect to Api!");
             }
         }) {
@@ -755,6 +762,26 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             Log.d("MainActivity", "unable to set next display timer!");
             e.printStackTrace();
         }
+}
+
+    /*
+     * check time range between refresh and next display timer
+     * */
+    private boolean shouldProceed() {
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+        formatter.setTimeZone(TimeZone.getTimeZone("GMT+8"));
+        try {
+            Date currentTime = formatter.parse(formatter.format(Calendar.getInstance().getTime()));
+            Date nextDisplayTimer = formatter.parse(SharedPreferenceManager.getNextDisplayDate(MainActivity.this));
+
+            long range = nextDisplayTimer.getTime() - currentTime.getTime();
+            Log.d("MainActivity", "alarm id range: " + range);
+            if (range <= 60000 && range > -60000) return false;
+
+        } catch (ParseException e) {
+            return true;
+        }
+        return true;
     }
 
     /*
@@ -803,12 +830,14 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                 timerType = "change_next_timer";
             } else if (intent.getExtras().getString("alarm_id").equals("refresh_timer")) {
                 timerType = "refresh_timer";
+                /*
+                * if next timer - refresh < 60000 then stop refresh
+                * */
+                if(!shouldProceed()) return;
             } else {
                 shutDown();
             }
-
-            requestSchedule();
-            if (isConnected) setRefreshTimer();
+            checkNetworkAccess();
         }
     };
 
@@ -833,11 +862,12 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     BroadcastReceiver connection = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            Log.d("MainActivity", "Current Connection Status: " + intent.getExtras().getBoolean("isConnected"));
+            //when a network is change then set refresh time to 30second(default)
+            refreshTime = 5000;
             showProgressBar(true, null);
+
             isConnected = intent.getExtras().getBoolean("isConnected");
             if (isConnected) {
-                refreshTime = 5000;
                 //write permission and request from cloud
                 requestWritePermission();
             } else {
@@ -845,6 +875,26 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             }
         }
     };
+
+    public void checkNetworkAccess() {
+        new NetworkAccessChecker(MainActivity.this).isInternetConnectionAvailable(new NetworkAccessChecker.InternetCheckListener() {
+            @Override
+            public void onComplete(final boolean connected) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (connected) {
+                            //write permission and request from cloud
+                            requestSchedule();
+                        } else {
+                            refreshTime = 5000;
+                            readLocalDisplay();
+                        }
+                    }
+                });
+            }
+        });
+    }
 
     /*---------------------------------------------------------------------------read from local display-----------------------------------------------------------------------------------*/
     private void readLocalDisplay() {
@@ -854,7 +904,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                 .perform(new ResultCallBack.OnRead() {
                     @Override
                     public void readResult(String result) {
-                        Log.d("haha", "local result:: " + result);
                         if (result.equals("Nothing") || result.equals("Fail")) {
                             showProgressBar(true, "Data Not Found!");
                         } else {
@@ -883,6 +932,10 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                         }
                     }
                 });
+        /*
+         * set refresh timer
+         * */
+        setRefreshTimer();
     }
 
     /*---------------------------------------------------------------------------delete unused display-----------------------------------------------------------------------------------*/

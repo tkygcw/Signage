@@ -41,13 +41,13 @@ import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.facebook.stetho.Stetho;
+import com.jby.signage.alarm.AlarmReceiver;
 import com.jby.signage.connection.NetworkAccessChecker;
 import com.jby.signage.connection.NetworkSchedulerService;
 import com.jby.signage.database.CustomSqliteHelper;
 import com.jby.signage.database.FrameworkClass;
 import com.jby.signage.database.ResultCallBack;
 import com.jby.signage.object.DisplayObject;
-import com.jby.signage.alarm.AlarmReceiver;
 import com.jby.signage.shareObject.MySingleton;
 import com.jby.signage.sharePreference.SharedPreferenceManager;
 
@@ -69,7 +69,6 @@ import java.util.Locale;
 import java.util.Map;
 
 import java.util.TimeZone;
-import java.util.concurrent.TimeUnit;
 
 import cn.pedant.SweetAlert.SweetAlertDialog;
 
@@ -762,7 +761,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             Log.d("MainActivity", "unable to set next display timer!");
             e.printStackTrace();
         }
-}
+    }
 
     /*
      * check time range between refresh and next display timer
@@ -831,9 +830,9 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             } else if (intent.getExtras().getString("alarm_id").equals("refresh_timer")) {
                 timerType = "refresh_timer";
                 /*
-                * if next timer - refresh < 60000 then stop refresh
-                * */
-                if(!shouldProceed()) return;
+                 * if next timer - refresh < 60000 then stop refresh
+                 * */
+                if (!shouldProceed()) return;
             } else {
                 shutDown();
             }

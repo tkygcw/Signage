@@ -20,5 +20,4 @@ public class AlarmReceiver extends BroadcastReceiver {
 
         context.sendBroadcast(i);
     }
-
 }

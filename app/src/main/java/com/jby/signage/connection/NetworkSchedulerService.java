@@ -59,7 +59,4 @@ public class NetworkSchedulerService extends JobService implements ConnectivityR
 
         sendBroadcast(i);
     }
-
-
-
 }

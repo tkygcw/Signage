@@ -1,5 +1,6 @@
 package com.jby.signage;
 //11dd111
+
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -222,6 +223,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             public void onResponse(String response) {
                 try {
                     JSONObject jsonObject = new JSONObject(response);
+                    Log.d("MainActivity", "json object: " + jsonObject);
                     if (jsonObject.getString("status").equals("1")) {
                         displayObjectArrayList.clear();
                         /*
@@ -244,7 +246,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                         /*
                          * refresh time
                          * */
-                        refreshTime = Long.valueOf(jsonObject.getString("refresh_time"));
+                        refreshTime = Long.parseLong(jsonObject.getString("refresh_time"));
                         /*
                          * shut down time
                          * */
@@ -295,7 +297,11 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             @Override
             protected Map<String, String> getParams() {
                 Map<String, String> params = new HashMap<>();
-                params.put("serial_no", getSerialNumber());
+                Log.d("MainActivity", "device_id " + SharedPreferenceManager.getDeviceID(MainActivity.this));
+                Log.d("MainActivity", "timer_type " + timerType);
+                Log.d("MainActivity", "next_display_date " + SharedPreferenceManager.getNextDisplayDate(MainActivity.this));
+
+                params.put("device_id", SharedPreferenceManager.getDeviceID(MainActivity.this));
                 params.put("timer_type", timerType);
                 params.put("next_display_date", SharedPreferenceManager.getNextDisplayDate(MainActivity.this));
                 params.put("read", "1");
@@ -657,19 +663,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     @Override
     protected void onPause() {
         super.onPause();
-        //        Log.d("hahahaha", "OnPause!!");
-        //        try {
-//            if (downloadReceiver != null) {
-//                unregisterReceiver(downloadReceiver);
-//                unregisterReceiver(alarmManger);
-//                //network control
-//                unregisterReceiver(connection);
-//                stopService(new Intent(this, NetworkSchedulerService.class));
-//            }
-//        } catch (Exception e) {
-//            Log.d("hahahaha", "OnPause Error");
-//            e.printStackTrace();
-//        }
     }
 
     @Override

@@ -25,43 +25,61 @@
             android:textSize="30sp"
             android:textStyle="bold" />
 
-        <EditText
-            android:id="@+id/device_name"
-            android:layout_width="match_parent"
-            android:layout_height="?actionBarSize"
-            android:layout_below="@id/label_device_name"
-            android:background="@drawable/custom_edit_text"
-            android:textColor="@color/grey"
-            android:textColorHint="@color/tranparent_white"
-            android:padding="5dp"
-            android:imeOptions="actionDone"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:inputType="text"
-            android:hint="Device " />
-
         <TextView
             android:id="@+id/label_device_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_below="@id/logo"
-            android:text="Device Name"
-            android:textColor="@color/white"
             android:fontFamily="@string/casual"
-            android:textSize="20sp"/>
+            android:text="Login Details"
+            android:textColor="@color/white"
+            android:textSize="20sp" />
+
+        <EditText
+            android:id="@+id/device_name"
+            android:layout_width="match_parent"
+            android:layout_height="?actionBarSize"
+            android:layout_below="@id/label_device_name"
+            android:autofillHints="false"
+            android:background="@drawable/custom_edit_text"
+            android:ellipsize="end"
+            android:hint="Device "
+            android:inputType="text"
+            android:maxLines="1"
+            android:padding="5dp"
+            android:textColor="@color/grey"
+            android:textColorHint="@color/tranparent_white" />
+
+        <EditText
+            android:id="@+id/password"
+            android:layout_width="match_parent"
+            android:layout_height="?actionBarSize"
+            android:layout_below="@id/device_name"
+            android:layout_marginTop="20dp"
+            android:autofillHints="false"
+            android:background="@drawable/custom_edit_text"
+            android:ellipsize="end"
+            android:hint="Password "
+            android:imeOptions="actionDone"
+            android:inputType="textPassword"
+            android:maxLines="1"
+            android:padding="5dp"
+            android:textColor="@color/grey"
+            android:textColorHint="@color/tranparent_white" />
+
 
         <Button
             android:id="@+id/save_button"
-            android:layout_below="@id/device_name"
             android:layout_width="match_parent"
+            android:layout_height="?actionBarSize"
+            android:layout_below="@id/password"
             android:layout_marginTop="20dp"
-            android:text="Save"
-            android:onClick="checkingInput"
-            android:textStyle="bold"
             android:background="@drawable/custom_button"
-            android:textColor="@color/white"
             android:fontFamily="@string/casual"
-            android:layout_height="?actionBarSize"/>
+            android:onClick="checkingInput"
+            android:text="Save"
+            android:textColor="@color/white"
+            android:textStyle="bold" />
 
         <pl.droidsonroids.gif.GifImageView
             android:id="@+id/progress_bar"
@@ -70,6 +88,7 @@
             android:layout_centerInParent="true"
             android:background="@color/transparent"
             android:src="@drawable/loading"
+            android:visibility="gone"
             tools:layout_editor_absoluteX="138dp"
             tools:layout_editor_absoluteY="304dp" />
 
@@ -78,11 +97,11 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_alignParentBottom="true"
-            android:textSize="10sp"
-            android:textColor="@color/white"
-            android:textStyle="bold"
             android:gravity="center"
-            android:padding="10dp" />
+            android:padding="10dp"
+            android:textColor="@color/white"
+            android:textSize="10sp"
+            android:textStyle="bold" />
 
     </RelativeLayout>
 

@@ -3,9 +3,9 @@ package com.jby.signage.alarm;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.util.Log;
+
 
 public class AlarmReceiver extends BroadcastReceiver {
 

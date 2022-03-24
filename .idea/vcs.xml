@@ -2,20 +2,5 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/AsyncTesting" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/ChaforGoogle" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/Driver" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/Etasgo" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/JBY" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/PriceChecker" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/Ride" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/RideDriver" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/StockTake" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/ThezPrinting" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/VegeApp" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/gittest/AsyncTesting" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/gittest/HanWei" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/gittest/WeiJieFyp" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/mjtwandroid" vcs="Git" />
   </component>
 </project>

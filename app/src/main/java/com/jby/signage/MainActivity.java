@@ -1,9 +1,15 @@
 package com.jby.signage;
-//11dd111
 
+import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.FileProvider;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -12,6 +18,7 @@ import android.app.DownloadManager;
 import android.app.PendingIntent;
 import android.app.job.JobInfo;
 import android.app.job.JobScheduler;
+import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -28,9 +35,13 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.os.Environment;
+import android.os.Handler;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -57,7 +68,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
-import java.lang.reflect.Method;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -80,13 +90,13 @@ import static com.jby.signage.shareObject.VariableUtils.device;
 import static com.jby.signage.shareObject.VariableUtils.display;
 import static com.jby.signage.shareObject.VariableUtils.galleyPath;
 
-public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCompletionListener, MediaPlayer.OnErrorListener {
+public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCompletionListener, MediaPlayer.OnErrorListener, View.OnTouchListener, View.OnClickListener {
     /*
      * download purpose
      * */
     private BroadcastReceiver downloadReceiver;
     private DownloadManager manager;
-    private File directory = new File(Environment.getExternalStorageDirectory() + "/Signage/");
+    private final String directoryUrl = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM) + "/Signage/";
     private String lastDownloadPath = "";
     /*
      * display list
@@ -97,12 +107,20 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     private boolean timerRunning = false;
     private String checkingTime;
     private long refreshTime = 5000;
-    private String shutDownTimer = "";
-
+    private CountDownTimer countDownTimer;
+    //    private String shutDownTimer = "";
     /*
      * connection
      * */
     private boolean isConnected = false;
+    /*
+     * layout
+     * */
+    private ConstraintLayout mainLayout;
+    private LinearLayout actionLayout;
+    private boolean isActivityOpen = false;
+    private Button reloadData, logOut, previousButton, nextButton;
+    private TextView playingPosition;
     /*
      * progress
      * */
@@ -121,6 +139,19 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
      * count down timer
      * */
     private boolean isNewDisplay = false;
+    /*
+     * permission request
+     */
+    ActivityResultLauncher<Intent> activityResultLauncher;
+
+    //download apk
+    long downloadApkId = -1;
+    String destination = "";
+    String FILE_NAME = "app-debug.apk";
+    String FILE_BASE_PATH = "file://";
+    String MIME_TYPE = "application/vnd.android.package-archive";
+    String PROVIDER_PATH = ".provider";
+    String APP_INSTALL_PATH = "\"application/vnd.android.package-archive\"";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -128,6 +159,38 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         setContentView(R.layout.activity_main);
         objectInitialize();
         objectSetting();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        isActivityOpen = false;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        isActivityOpen = true;
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        isActivityOpen = false;
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        //for action layout purpose
+        isActivityOpen = true;
+        //register service
+        setDownloadReceiver();
+        getApplication().registerReceiver(alarmManger, new IntentFilter("alarmManager"));
+        //network
+        registerReceiver(connection, new IntentFilter("connection"));
+        Intent startServiceIntent = new Intent(this, NetworkSchedulerService.class);
+        startService(startServiceIntent);
     }
 
     private void objectInitialize() {
@@ -138,6 +201,14 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         displayObjectArrayList = new ArrayList<>();
         playList = new ArrayList<>();
 
+        mainLayout = findViewById(R.id.main_layout);
+        actionLayout = findViewById(R.id.action_layout);
+        reloadData = findViewById(R.id.reset_button);
+        logOut = findViewById(R.id.logout_button);
+        previousButton = findViewById(R.id.previous_button);
+        nextButton = findViewById(R.id.next_button);
+        playingPosition = findViewById(R.id.playing_position);
+
         progressBar = findViewById(R.id.progress_bar);
         progressBarLabel = findViewById(R.id.progress_bar_label);
         labelCompany = findViewById(R.id.label_company);
@@ -146,43 +217,94 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         imageView = findViewById(R.id.image_view);
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private void objectSetting() {
+        Button download = findViewById(R.id.download);
+        download.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                downloadNewAPK();
+            }
+        });
+
         videoView.setOnCompletionListener(this);
         videoView.setOnErrorListener(this);
+        mainLayout.setOnTouchListener(this);
+
+        logOut.setOnClickListener(this);
+        reloadData.setOnClickListener(this);
+        previousButton.setOnClickListener(this);
+        nextButton.setOnClickListener(this);
+        //for android 11 onwards
+        permissionCallBack();
         //screen orientation
         scheduleJob();
+    }
 
+
+    private void checkPermission() {
+        boolean permissionAllow;
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
+            permissionAllow = Environment.isExternalStorageManager();
+        } else {
+            permissionAllow = ActivityCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        }
+
+        if (permissionAllow) {
+            setRefreshTimer();
+            onStart();
+        } else {
+            requestWritePermission();
+        }
     }
 
     /*
      * request write permission
      * */
     private void requestWritePermission() {
-        int hasWriteStoragePermission = ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE);
-        if (hasWriteStoragePermission != PackageManager.PERMISSION_GRANTED) {
+        showMessageOKCancel(
+                new SweetAlertDialog.OnSweetClickListener() {
+                    @Override
+                    public void onClick(SweetAlertDialog sweetAlertDialog) {
+                        /*
+                         * android 11 onwards
+                         */
+                        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
+                            try {
+                                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                                intent.addCategory("android.intent.category.DEFAULT");
+                                intent.setData(Uri.parse(String.format("package:%s", getApplicationContext().getPackageName())));
+                                activityResultLauncher.launch(intent);
+                            } catch (Exception e) {
+                                Intent intent = new Intent();
+                                intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                                activityResultLauncher.launch(intent);
+                            }
+                        }
+                        /*
+                         * before android 11
+                         */
+                        else {
+                            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_WRITE_EXTERNAL_PERMISSION);
+                        }
+                        sweetAlertDialog.dismissWithAnimation();
+                    }
+                });
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (!shouldShowRequestPermissionRationale(Manifest.permission.WRITE_CONTACTS)) {
-                    showMessageOKCancel(
-                            new SweetAlertDialog.OnSweetClickListener() {
-                                @Override
-                                public void onClick(SweetAlertDialog sweetAlertDialog) {
-                                    requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_WRITE_EXTERNAL_PERMISSION);
-                                    sweetAlertDialog.dismissWithAnimation();
-                                }
-                            });
-                    return;
-                }
-                requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_WRITE_EXTERNAL_PERMISSION);
+    }
+
+    //for android 11 onwards only
+    private void permissionCallBack() {
+        activityResultLauncher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), new ActivityResultCallback<ActivityResult>() {
+            @Override
+            public void onActivityResult(ActivityResult result) {
+                checkPermission();
             }
-        } else {
-            readLocalDisplay();
-            setRefreshTimer();
-        }
+        });
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         if (requestCode == REQUEST_WRITE_EXTERNAL_PERMISSION) {
             if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Permission Granted
@@ -250,8 +372,8 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                         /*
                          * shut down time
                          * */
-                        shutDownTimer = jsonObject.getString("shut_down_time");
-                        setShutDownTimer();
+//                        shutDownTimer = jsonObject.getString("shut_down_time");
+//                        setShutDownTimer();
                         /*
                          * add next display list and date
                          * */
@@ -337,7 +459,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                         "next"
                 ));
             }
-        } catch (JSONException e) {
+        } catch (JSONException ignored) {
         }
     }
 
@@ -356,7 +478,9 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                     .perform(new ResultCallBack.OnRead() {
                         @Override
                         public void readResult(String result) {
+                            Log.d("hahahaha", "read result: " + result);
                             Log.d("hahahaha", "read here!");
+                            Log.d("hahahaha", "Gallery: " + displayObjectArrayList.get(checkingPosition).getPath());
                             /*
                              * file not found (new file) so need arrange to download
                              * */
@@ -376,7 +500,9 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                                  * if a gallery is use in both default & next display then we have to save it separately
                                  * */
                                 tbGallery.new Read("gallery_id")
-                                        .where("link_id ='" + displayObjectArrayList.get(checkingPosition).getLinkID() + "' AND gallery_id ='" + displayObjectArrayList.get(checkingPosition).getGalleryID() + "' AND default_display='" + displayObjectArrayList.get(checkingPosition).getDefaultDisplay() + "'")
+                                        .where("link_id ='" + displayObjectArrayList.get(checkingPosition).getLinkID()
+                                                + "' AND gallery_id ='" + displayObjectArrayList.get(checkingPosition).getGalleryID()
+                                                + "' AND default_display='" + displayObjectArrayList.get(checkingPosition).getDefaultDisplay() + "'")
                                         .perform(new ResultCallBack.OnRead() {
                                             @Override
                                             public void readResult(String result) {
@@ -424,14 +550,17 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                 displayObjectArrayList.clear();
                 videoView.setVisibility(View.GONE);
                 imageView.setVisibility(View.GONE);
+                playPosition = 0;
                 /*
                  * delete local file
                  * */
-                File dir = new File(directory.getAbsolutePath());
+                File dir = new File(directoryUrl);
                 if (dir.exists() && dir.isDirectory()) {
                     String[] children = dir.list();
-                    for (int i = 0; i < children.length; i++) {
-                        new File(dir, children[i]).delete();
+                    if (children != null) {
+                        for (String child : children) {
+                            new File(dir, child).delete();
+                        }
                     }
                 }
             }
@@ -441,24 +570,49 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     private void downLoadFile() {
         try {
             lastDownloadPath = displayObjectArrayList.get(checkingPosition).getPath();
-
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(galleyPath + SharedPreferenceManager.getMerchantID(this) + "/" + displayObjectArrayList.get(checkingPosition).getPath()));
-            request.setDescription("Downloading");
+            request.setDescription("Downloading media files...");
             request.setTitle("Download");
 
             request.allowScanningByMediaScanner();
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
 
-            if (!directory.exists()) {
-                directory.mkdir();
-            }
-
-            request.setDestinationInExternalPublicDir("/Signage", "" + displayObjectArrayList.get(checkingPosition).getPath());
-
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DCIM, "Signage/" + displayObjectArrayList.get(checkingPosition).getPath());
             manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
             manager.enqueue(request);
         } catch (Exception ex) {
+            Log.d("hahahaha", "Download error: " + ex);
+        }
+    }
 
+    private void downloadNewAPK() {
+        try {
+            destination = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS).toString() + "/" + FILE_NAME;
+            Uri uri = Uri.parse(FILE_BASE_PATH + destination);
+            Log.d("hahahaha", "File:  " + uri);
+
+            File file = new File(destination);
+            if (file.exists()) {
+                file.delete();
+                Toast.makeText(this, "File Exist", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "File Not Existed", Toast.LENGTH_SHORT).show();
+            }
+            DownloadManager downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+
+            Uri downloadUri = Uri.parse("https://www.channelsoft.com.my/signage/app-debug.apk");
+            DownloadManager.Request request = new DownloadManager.Request(downloadUri);
+            request.setMimeType(MIME_TYPE);
+            request.setTitle("Download");
+            request.setDescription("Downloading new file...");
+            // set destination
+            request.setDestinationUri(uri);
+            // Enqueue a new download and same the referenceId
+            downloadApkId = downloadManager.enqueue(request);
+            Toast.makeText(this, "Downloading", Toast.LENGTH_SHORT).show();
+
+        } catch (Exception ex) {
+            Toast.makeText(this, "Download Error", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -468,25 +622,57 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             @Override
             public void onReceive(Context context, Intent intent) {
                 long downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, 0L);
-                if (downloadId == -1)
-                    return;
-
-                // query download status
-                Cursor cursor = manager.query(new DownloadManager.Query().setFilterById(downloadId));
-                if (cursor.moveToFirst()) {
-                    int status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
-                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                        // add gallery into local database when download finished
-                        addGalleryIntoLocal();
-                    } else {
-                        // download is assumed cancelled
-                    }
+                if (downloadId == downloadApkId) {
+                    Toast.makeText(context, "Installing...", Toast.LENGTH_SHORT).show();
+                    installAPK();
                 } else {
-                    // download is assumed cancelled
+                    downloadMediaFiles(downloadId);
                 }
             }
         };
         registerReceiver(downloadReceiver, filter);
+    }
+
+    void downloadMediaFiles(long downloadId) {
+        // query download status
+        Cursor cursor = manager.query(new DownloadManager.Query().setFilterById(downloadId));
+        if (cursor.moveToFirst()) {
+            int status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
+            if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                // add gallery into local database when download finished
+                addGalleryIntoLocal();
+            } else {
+                // download is assumed cancelled
+            }
+        } else {
+            // download is assumed cancelled
+        }
+    }
+
+    void installAPK() {
+        File file = new File(destination);
+        if (file.exists()) {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uriFromFile(getApplicationContext(), new File(destination)), MIME_TYPE);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            try {
+                startActivity(intent);
+            } catch (ActivityNotFoundException e) {
+                e.printStackTrace();
+                Toast.makeText(getApplicationContext(), "Unable to install...", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Toast.makeText(getApplicationContext(), "Unable to install...", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    Uri uriFromFile(Context context, File file) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            return FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".provider", file);
+        } else {
+            return Uri.fromFile(file);
+        }
     }
 
     private void addGalleryIntoLocal() {
@@ -525,10 +711,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     }
 
     private boolean allDownloaded(boolean isNewDisplay) {
-        Log.d("hahahaha", "Checking position!!!!" + checkingPosition);
-        for (int i = 0; i < displayObjectArrayList.size(); i++) {
-            Log.d("hahahaha", "status: " + displayObjectArrayList.get(i).getStatus() + "  path: " + displayObjectArrayList.get(i).getPath() + "  display: " + displayObjectArrayList.get(i).getDefaultDisplay());
-        }
         for (int i = 0; i < displayObjectArrayList.size(); i++) {
             if (displayObjectArrayList.get(i).getStatus().equals("0")) {
                 return false;
@@ -568,24 +750,36 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
      * playlist control
      * */
     private void play() {
+        Log.d("haha", "Current Play Position: " + playPosition);
         /*
          * if nothing is playing
          * */
         if (!videoView.isPlaying() && !timerRunning) {
             try {
                 if (!isNewDisplay) {
+                    //remove loading screen
+                    showProgressBar(false, "");
                     //screen orientation
                     setRequestedOrientation(playList.get(playPosition).getDisplayType().equals("0") ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
                     //path
-                    String filePath = directory.getAbsolutePath() + "/" + playList.get(playPosition).getPath();
+                    String filePath = directoryUrl + playList.get(playPosition).getPath();
+                    Log.d("haha", "display path " + filePath);
+                    //display video
                     if (isMP4()) {
-                        videoView.setVideoPath(filePath);
-                        videoView.start();
-                    } else {
+                        try {
+                            videoView.setVideoPath(filePath);
+                            videoView.start();
+                        } catch (Exception e) {
+                            Log.d("haha", "File Not Found: " + e);
+                            playPosition++;
+                        }
+                    }
+                    //display photos
+                    else {
                         timerRunning = true;
                         imageView.setImageBitmap(BitmapFactory.decodeFile(filePath));
                         Log.d("haha", "play time: " + playList.get(playPosition).getTimer());
-                        new CountDownTimer(Long.valueOf(playList.get(playPosition).getTimer()), 1000) {
+                        countDownTimer = new CountDownTimer(Long.parseLong(playList.get(playPosition).getTimer()), 1000) {
                             @Override
                             public void onTick(long millisUntilFinished) {
                             }
@@ -593,7 +787,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                             @Override
                             public void onFinish() {
                                 timerRunning = false;
-                                checkPlayPosition();
+                                checkPlayPosition(true, false);
                             }
                         }.start();
                     }
@@ -623,16 +817,41 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                         }
                     }.start();
                 }
-
+                /*
+                 * display current play position purpose
+                 * */
+                String playingText = playPosition + 1 + "/" + playList.size();
+                playingPosition.setText(playingText);
             } catch (IndexOutOfBoundsException e) {
                 playPosition = 0;
             }
+        } else {
+            Log.d("haha", "Current Play Position Tak Boleh: " + playPosition);
+            Log.d("haha", "Current Play Position Video Playing: " + videoView.isPlaying());
+            Log.d("haha", "Current Play Position Timer Running: " + timerRunning);
         }
     }
 
-    private void checkPlayPosition() {
-        if (playPosition < playList.size() - 1) playPosition++;
-        else playPosition = 0;
+    private void checkPlayPosition(boolean playNext, boolean forceStop) {
+        if (playNext) {
+            if (playPosition < playList.size() - 1) playPosition++;
+            else playPosition = 0;
+        } else {
+            if (playPosition > 0) playPosition--;
+                //if playlist size must at least >= 2 (no point to use this if size <= 1)
+            else {
+                if (playList.size() >= 2) {
+                    playPosition = playList.size() - 1;
+                }
+            }
+        }
+        if (forceStop) {
+            timerRunning = false;
+            videoView.stopPlayback();
+            if (countDownTimer != null) {
+                countDownTimer.cancel();
+            }
+        }
         play();
     }
 
@@ -652,56 +871,12 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     /*-----------------------------------------------------------------------------------video view purpose-------------------------------------------------------------------------*/
     @Override
     public void onCompletion(MediaPlayer mediaPlayer) {
-        checkPlayPosition();
+        checkPlayPosition(true, false);
     }
 
     @Override
     public boolean onError(MediaPlayer mediaPlayer, int i, int i1) {
         return true;
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-    }
-
-    @Override
-    protected void onStart() {
-        super.onStart();
-        Log.d("hahahaha", "OnStart!!");
-        setDownloadReceiver();
-        registerReceiver(alarmManger, new IntentFilter("alarmManager"));
-        //network
-        registerReceiver(connection, new IntentFilter("connection"));
-        Intent startServiceIntent = new Intent(this, NetworkSchedulerService.class);
-        startService(startServiceIntent);
-
-    }
-
-    public static String getSerialNumber() {
-        String serialNumber;
-        try {
-            @SuppressLint("PrivateApi") Class<?> c = Class.forName("android.os.SystemProperties");
-            Method get = c.getMethod("get", String.class);
-
-            serialNumber = (String) get.invoke(c, "gsm.sn1");
-            if (serialNumber.equals(""))
-                serialNumber = (String) get.invoke(c, "ril.serialnumber");
-            if (serialNumber.equals(""))
-                serialNumber = (String) get.invoke(c, "ro.serialno");
-            if (serialNumber.equals(""))
-                serialNumber = (String) get.invoke(c, "sys.serialnumber");
-            if (serialNumber.equals(""))
-                serialNumber = Build.SERIAL;
-
-            // If none of the methods above worked
-            if (serialNumber.equals(""))
-                serialNumber = null;
-        } catch (Exception e) {
-            e.printStackTrace();
-            serialNumber = null;
-        }
-        return serialNumber;
     }
 
     /*-----------------------------------------------------------------------------timer-----------------------------------------------------------------------------------*/
@@ -714,15 +889,15 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         Intent alarmIntent = new Intent(this, AlarmReceiver.class);
         alarmIntent.putExtra("alarm_id", "refresh_timer");
 
-        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 1, alarmIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+        @SuppressLint("UnspecifiedImmutableFlag") PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 1, alarmIntent, PendingIntent.FLAG_UPDATE_CURRENT);
         /*
          * time setting
          * */
         alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         try {
-            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + refreshTime, pendingIntent);
+            alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + refreshTime, pendingIntent);
         } catch (RuntimeException e) {
-            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 30000, pendingIntent);
+            alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 30000, pendingIntent);
         }
     }
 
@@ -747,8 +922,9 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
              * */
             alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
             try {
-                alarmManager.set(AlarmManager.RTC_WAKEUP, date.getTime(), pendingIntent);
-            } catch (RuntimeException e) {
+                assert date != null;
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, date.getTime(), pendingIntent);
+            } catch (RuntimeException ignored) {
             }
         } catch (Exception e) {
             Log.d("MainActivity", "unable to set next display timer!");
@@ -766,6 +942,8 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             Date currentTime = formatter.parse(formatter.format(Calendar.getInstance().getTime()));
             Date nextDisplayTimer = formatter.parse(SharedPreferenceManager.getNextDisplayDate(MainActivity.this));
 
+            assert nextDisplayTimer != null;
+            assert currentTime != null;
             long range = nextDisplayTimer.getTime() - currentTime.getTime();
             Log.d("MainActivity", "alarm id range: " + range);
             if (range <= 60000 && range > -60000) return false;
@@ -778,38 +956,38 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     /*
      * set shut down timer
-     * */
-    private void setShutDownTimer() {
-        //alarm setting
-        AlarmManager alarmManager;
-        Intent alarmIntent = new Intent(this, AlarmReceiver.class);
-        alarmIntent.putExtra("alarm_id", "shut_down_timer");
-
-        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 3, alarmIntent, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        try {
-            Calendar cal = Calendar.getInstance();
-            SimpleDateFormat formatter = new SimpleDateFormat("HH:mm");
-
-            Date currentTime = formatter.parse(formatter.format(cal.getTime()));
-            Date shutDownTime = formatter.parse(shutDownTimer);
-
-            if (currentTime.before(shutDownTime) || currentTime == shutDownTime) {
-                String[] timer = shutDownTimer.split(":");
-                cal.set(Calendar.HOUR_OF_DAY, Integer.parseInt(timer[0]));
-                cal.set(Calendar.MINUTE, Integer.parseInt(timer[1]));
-
-                alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-                alarmManager.set(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), pendingIntent);
-            } else {
-                Log.d("MainActivity", "Shut Down Time is over!");
-            }
-
-        } catch (Exception e) {
-            Log.d("MainActivity", "unable to set shut down timer");
-            e.printStackTrace();
-        }
-    }
+     * /
+//    private void setShutDownTimer() {
+//        //alarm setting
+//        AlarmManager alarmManager;
+//        Intent alarmIntent = new Intent(this, AlarmReceiver.class);
+//        alarmIntent.putExtra("alarm_id", "shut_down_timer");
+//
+//        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 3, alarmIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+//
+//        try {
+//            Calendar cal = Calendar.getInstance();
+//            SimpleDateFormat formatter = new SimpleDateFormat("HH:mm");
+//
+//            Date currentTime = formatter.parse(formatter.format(cal.getTime()));
+//            Date shutDownTime = formatter.parse(shutDownTimer);
+//
+//            if (currentTime.before(shutDownTime) || currentTime == shutDownTime) {
+//                String[] timer = shutDownTimer.split(":");
+//                cal.set(Calendar.HOUR_OF_DAY, Integer.parseInt(timer[0]));
+//                cal.set(Calendar.MINUTE, Integer.parseInt(timer[1]));
+//
+//                alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+//                alarmManager.set(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), pendingIntent);
+//            } else {
+//                Log.d("MainActivity", "Shut Down Time is over!");
+//            }
+//
+//        } catch (Exception e) {
+//            Log.d("MainActivity", "unable to set shut down timer");
+//            e.printStackTrace();
+//        }
+//    }
 
     /*
      * when timer is fired
@@ -817,18 +995,25 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     BroadcastReceiver alarmManger = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            Log.d("MainActivity", "alarm id: " + intent.getExtras().getString("alarm_id"));
+            checkingTime = (String) android.text.format.DateFormat.format("hh:mm:ss", new java.util.Date());
+            Log.d("MainActivity", "Alarm Fired!!!!!! " + checkingTime);
             if (intent.getExtras().getString("alarm_id").equals("change_next_timer")) {
                 timerType = "change_next_timer";
+                playPosition = -1;
+                isNewDisplay = true;
             } else if (intent.getExtras().getString("alarm_id").equals("refresh_timer")) {
                 timerType = "refresh_timer";
                 /*
                  * if next timer - refresh < 60000 then stop refresh
                  * */
                 if (!shouldProceed()) return;
-            } else {
-                shutDown();
             }
+            /*
+             * shut down device
+             * */
+//            else {
+//                shutDown();
+//            }
             checkNetworkAccess();
         }
     };
@@ -861,7 +1046,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             isConnected = intent.getExtras().getBoolean("isConnected");
             if (isConnected) {
                 //write permission and request from cloud
-                requestWritePermission();
+                checkPermission();
             } else {
                 readLocalDisplay();
             }
@@ -936,24 +1121,40 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         /*
          * delete file from directory
          * */
-        File dir = new File(directory.getAbsolutePath());
+        File dir = new File(directoryUrl);
         boolean delete;
 
         if (dir.exists() && dir.isDirectory()) {
             String[] content = dir.list();
 
-            for (String gallery : content) {
-                delete = true;
-                for (int j = 0; j < displayObjectArrayList.size(); j++) {
-                    if (gallery.equals(displayObjectArrayList.get(j).getPath())) delete = false;
-                }
-                if (delete) {
-                    Log.d("hahahaha", "delete item: " + gallery);
-                    new File(dir, gallery).delete();
-                    isNewDisplay = true;
+            if (content != null) {
+                for (String gallery : content) {
+                    delete = true;
+                    for (int j = 0; j < displayObjectArrayList.size(); j++) {
+                        if (gallery.equals(displayObjectArrayList.get(j).getPath())) {
+                            delete = false;
+                            break;
+                        }
+                    }
+                    if (delete) {
+                        Log.d("hahahaha", "delete item: " + gallery);
+                        new File(dir, gallery).delete();
+                    }
                 }
             }
         }
+
+        tbGallery.new Read("gallery_id")
+                .where("default_display = 'default' AND status = '0'")
+                .perform(new ResultCallBack.OnRead() {
+                    @Override
+                    public void readResult(String result) {
+                        if (!result.equals("Nothing") && !result.equals("Fail")) {
+                            playPosition = -1;
+                            isNewDisplay = true;
+                        }
+                    }
+                });
 
         /*
          * delete local database
@@ -1028,15 +1229,102 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         progressBarLabel.setText(label == null ? "Loading..." : label);
     }
 
-    //    --------------------------------------------------full screen-----------------------------------------------------------------------
-    private void shutDown() {
-        try {
-            Process proc = Runtime.getRuntime()
-                    .exec(new String[]{"su", "-c", "reboot -p"});
-            proc.waitFor();
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            Toast.makeText(this, "Your device is not able to shut down!", Toast.LENGTH_SHORT).show();
+    @Override
+    public boolean onTouch(View view, MotionEvent motionEvent) {
+        if (view.getId() == R.id.main_layout) {
+            actionLayout.setVisibility(View.VISIBLE);
+            //hide action layout after few seconds
+            new Handler().postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isActivityOpen)
+                                actionLayout.setVisibility(View.GONE);
+                        }
+                    });
+                }
+            }, 10000);
+        }
+        return false;
+    }
+
+    @Override
+    public void onClick(View view) {
+        switch (view.getId()) {
+            case R.id.logout_button:
+                logOutRequest();
+                break;
+            case R.id.reset_button:
+                resetData();
+                break;
+            case R.id.previous_button:
+                checkPlayPosition(false, true);
+                break;
+            default:
+                checkPlayPosition(true, true);
         }
     }
+
+    private void resetData() {
+        final SweetAlertDialog dialog = new SweetAlertDialog(this, SweetAlertDialog.WARNING_TYPE);
+        dialog.setTitleText("Reset Request");
+        dialog.setContentText("Are you sure that you want to clear all data?\nIt may takes few minutes to complete this process.");
+        dialog.setConfirmText("Confirm");
+        dialog.setCancelText("Cancel");
+        dialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
+            @Override
+            public void onClick(SweetAlertDialog sweetAlertDialog) {
+                refreshTime = 5000;
+                showProgressBar(true, "Restoring Data...");
+                clearAll();
+                setRefreshTimer();
+                dialog.dismissWithAnimation();
+            }
+        });
+        dialog.setCancelClickListener(new SweetAlertDialog.OnSweetClickListener() {
+            @Override
+            public void onClick(SweetAlertDialog sweetAlertDialog) {
+                dialog.dismissWithAnimation();
+            }
+        });
+        dialog.show();
+    }
+
+    private void logOutRequest() {
+        final SweetAlertDialog dialog = new SweetAlertDialog(this, SweetAlertDialog.WARNING_TYPE);
+        dialog.setTitleText("Sign Out Request");
+        dialog.setContentText("Are you sure that you want to sign out?");
+        dialog.setConfirmText("Sign Out");
+        dialog.setCancelText("Cancel");
+        dialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
+            @Override
+            public void onClick(SweetAlertDialog sweetAlertDialog) {
+                SharedPreferenceManager.clear(getApplicationContext());
+                startActivity(new Intent(getApplicationContext(), SettingActivity.class));
+                finish();
+                dialog.dismissWithAnimation();
+            }
+        });
+        dialog.setCancelClickListener(new SweetAlertDialog.OnSweetClickListener() {
+            @Override
+            public void onClick(SweetAlertDialog sweetAlertDialog) {
+                dialog.dismissWithAnimation();
+            }
+        });
+        dialog.show();
+    }
+
+    //    --------------------------------------------------full screen-----------------------------------------------------------------------
+//    private void shutDown() {
+//        try {
+//            Process proc = Runtime.getRuntime()
+//                    .exec(new String[]{"su", "-c", "reboot -p"});
+//            proc.waitFor();
+//        } catch (Exception ex) {
+//            ex.printStackTrace();
+//            Toast.makeText(this, "Your device is not able to shut down!", Toast.LENGTH_SHORT).show();
+//        }
+//    }
 }

@@ -169,6 +169,7 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
             public void onResponse(String response) {
                 try {
                     JSONObject jsonObject = new JSONObject(response);
+                    Log.d("", "login json: " + jsonObject);
                     if (jsonObject.getString("status").equals("1")) {
                         //check status
                         String status = jsonObject.getJSONObject("device_detail").getString("status");
@@ -194,6 +195,7 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
                     }
                 } catch (JSONException e) {
                     e.printStackTrace();
+                    CustomToast(getApplicationContext(), "Something Went Wrong!");
                 }
                 showProgressBar(false);
             }
@@ -212,7 +214,10 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
                 return params;
             }
         };
-        MySingleton.getmInstance(this).addToRequestQueue(stringRequest);
+        MySingleton.getmInstance(this).
+
+                addToRequestQueue(stringRequest);
+
     }
 
     private void notFoundDialog() {

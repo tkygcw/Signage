@@ -3,7 +3,7 @@
     <item android:state_pressed="true" >
         <shape>
             <solid
-                android:color="#B9016AFB" />
+                android:color="#F44336" />
 
             <stroke
                 android:width="2dp"
@@ -20,8 +20,8 @@
         <corners android:radius="10dp"/>
 
         <gradient
-            android:endColor="@color/transparent_blue"
-            android:startColor="@color/transparent_sky_blue"
+            android:endColor="@color/light_red"
+            android:startColor="@color/google_color"
             android:type="linear"/>
 
 <!--        <stroke-->

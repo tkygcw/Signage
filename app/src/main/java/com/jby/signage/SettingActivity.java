@@ -69,7 +69,9 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
 
         deviceName.setOnEditorActionListener(this);
         isRegister();
-        displayVersion();
+        //display version
+        String version = "Power By Channel Soft \n" + "Version " + getVersion();
+        versionName.setText(version);
     }
 
     @Override
@@ -84,54 +86,8 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
 
     private void isRegister() {
         if (!SharedPreferenceManager.getDeviceID(this).equals("default")) {
-            showProgressBar(true);
-            layoutCheck();
+            openDisplayScreen();
         }
-    }
-
-    private void layoutCheck() {
-        StringRequest stringRequest = new StringRequest(Request.Method.POST, device, new Response.Listener<String>() {
-            @Override
-            public void onResponse(String response) {
-                showProgressBar(false);
-                try {
-                    JSONObject jsonObject = new JSONObject(response);
-                    Log.d("", "json: " + jsonObject.toString());
-                    if (jsonObject.getString("status").equals("1")) {
-                        String status = jsonObject.getJSONArray("device").getJSONObject(0).getString("status");
-                        Log.d("", "cloud status: " + status);
-                        if (status.equals("0")) {
-                            openDisplayScreen();
-                        } else {
-                            notFoundDialog();
-                        }
-                    }
-                    /*
-                     * if device serial_no not found
-                     * */
-                    else {
-                        notFoundDialog();
-                    }
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
-            }
-        }, new Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error) {
-                showProgressBar(false);
-                CustomToast(getApplicationContext(), "Unable Connect to Api!");
-            }
-        }) {
-            @Override
-            protected Map<String, String> getParams() {
-                Map<String, String> params = new HashMap<>();
-                params.put("launch_check", "1");
-                params.put("device_id", SharedPreferenceManager.getDeviceID(getApplicationContext()));
-                return params;
-            }
-        };
-        MySingleton.getmInstance(this).addToRequestQueue(stringRequest);
     }
 
     public void openDisplayScreen() {
@@ -217,7 +173,6 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
         MySingleton.getmInstance(this).
 
                 addToRequestQueue(stringRequest);
-
     }
 
     private void notFoundDialog() {
@@ -238,13 +193,15 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
         progressBar.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
-    private void displayVersion() {
+    private String getVersion() {
+        String version = "-";
         try {
             PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
-            String version = "Power By Channel Soft \n" + "Version " + pInfo.versionName;
-            versionName.setText(version);
+            version = pInfo.versionName;
         } catch (PackageManager.NameNotFoundException e) {
+            version = "-";
             e.printStackTrace();
         }
+        return version;
     }
 }

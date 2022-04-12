@@ -12,6 +12,7 @@ public class VariableUtils {
     public static String display = domain + prefix + "display/display.php";
     public static String device = domain + prefix + "device/device.php";
     public static String galleyPath = domain + prefix + "gallery/resource/";
+    public static String version = domain + prefix + "version/index.php";
 
     /*
     * network

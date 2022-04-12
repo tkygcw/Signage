@@ -106,20 +106,6 @@
                 android:textColor="@color/white"
                 android:textStyle="bold" />
 
-
-            <Button
-                android:id="@+id/download"
-                android:layout_width="wrap_content"
-                android:layout_height="?actionBarSize"
-                android:layout_marginStart="10dp"
-                android:background="@drawable/custom_button"
-                android:drawableRight="@android:drawable/ic_media_next"
-                android:padding="5dp"
-                android:text="Download"
-                android:textColor="@color/white"
-                android:textStyle="bold" />
-
-
         </LinearLayout>
 
         <LinearLayout
@@ -150,6 +136,13 @@
                 android:text="Log Out"
                 android:textColor="@color/white"
                 android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/check_version"
+                android:layout_width="?actionBarSize"
+                android:layout_height="?actionBarSize"
+                android:padding="10dp"
+                android:src="@drawable/refresh" />
 
         </LinearLayout>
 

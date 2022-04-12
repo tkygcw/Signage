@@ -25,6 +25,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 
 import android.database.Cursor;
@@ -89,6 +90,7 @@ import static com.jby.signage.shareObject.VariableUtils.REQUEST_WRITE_EXTERNAL_P
 import static com.jby.signage.shareObject.VariableUtils.device;
 import static com.jby.signage.shareObject.VariableUtils.display;
 import static com.jby.signage.shareObject.VariableUtils.galleyPath;
+import static com.jby.signage.shareObject.VariableUtils.version;
 
 public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCompletionListener, MediaPlayer.OnErrorListener, View.OnTouchListener, View.OnClickListener {
     /*
@@ -120,6 +122,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     private LinearLayout actionLayout;
     private boolean isActivityOpen = false;
     private Button reloadData, logOut, previousButton, nextButton;
+    private ImageView checkVersion;
     private TextView playingPosition;
     /*
      * progress
@@ -146,12 +149,12 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     //download apk
     long downloadApkId = -1;
+    String downloadLink = "";
     String destination = "";
-    String FILE_NAME = "app-debug.apk";
+    String FILE_NAME = "app.apk";
     String FILE_BASE_PATH = "file://";
     String MIME_TYPE = "application/vnd.android.package-archive";
     String PROVIDER_PATH = ".provider";
-    String APP_INSTALL_PATH = "\"application/vnd.android.package-archive\"";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -184,13 +187,15 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         super.onStart();
         //for action layout purpose
         isActivityOpen = true;
-        //register service
+        //download receiver
         setDownloadReceiver();
+        //alarm receiver
         getApplication().registerReceiver(alarmManger, new IntentFilter("alarmManager"));
-        //network
+        //network receiver
         registerReceiver(connection, new IntentFilter("connection"));
         Intent startServiceIntent = new Intent(this, NetworkSchedulerService.class);
         startService(startServiceIntent);
+
     }
 
     private void objectInitialize() {
@@ -207,6 +212,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         logOut = findViewById(R.id.logout_button);
         previousButton = findViewById(R.id.previous_button);
         nextButton = findViewById(R.id.next_button);
+        checkVersion = findViewById(R.id.check_version);
         playingPosition = findViewById(R.id.playing_position);
 
         progressBar = findViewById(R.id.progress_bar);
@@ -219,14 +225,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     @SuppressLint("ClickableViewAccessibility")
     private void objectSetting() {
-        Button download = findViewById(R.id.download);
-        download.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                downloadNewAPK();
-            }
-        });
-
         videoView.setOnCompletionListener(this);
         videoView.setOnErrorListener(this);
         mainLayout.setOnTouchListener(this);
@@ -235,6 +233,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         reloadData.setOnClickListener(this);
         previousButton.setOnClickListener(this);
         nextButton.setOnClickListener(this);
+        checkVersion.setOnClickListener(this);
         //for android 11 onwards
         permissionCallBack();
         //screen orientation
@@ -252,7 +251,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
         if (permissionAllow) {
             setRefreshTimer();
-            onStart();
+//            onStart();
         } else {
             requestWritePermission();
         }
@@ -349,6 +348,14 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                     if (jsonObject.getString("status").equals("1")) {
                         displayObjectArrayList.clear();
                         /*
+                         * check device status
+                         * */
+                        String status = jsonObject.getJSONArray("device_status").getJSONObject(0).getString("status");
+                        if (!status.equals("0")) {
+                            deviceError();
+                            return;
+                        }
+                        /*
                          * default display
                          * */
                         Log.d("MainActivity", "alarm id: " + jsonObject);
@@ -424,6 +431,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                 Log.d("MainActivity", "next_display_date " + SharedPreferenceManager.getNextDisplayDate(MainActivity.this));
 
                 params.put("device_id", SharedPreferenceManager.getDeviceID(MainActivity.this));
+                params.put("version", getVersion());
                 params.put("timer_type", timerType);
                 params.put("next_display_date", SharedPreferenceManager.getNextDisplayDate(MainActivity.this));
                 params.put("read", "1");
@@ -569,6 +577,9 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     private void downLoadFile() {
         try {
+            if (playList.size() <= 0) {
+                showProgressBar(true, "Downloading File " + checkingPosition + "/" + displayObjectArrayList.size() + "...");
+            }
             lastDownloadPath = displayObjectArrayList.get(checkingPosition).getPath();
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(galleyPath + SharedPreferenceManager.getMerchantID(this) + "/" + displayObjectArrayList.get(checkingPosition).getPath()));
             request.setDescription("Downloading media files...");
@@ -594,13 +605,10 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             File file = new File(destination);
             if (file.exists()) {
                 file.delete();
-                Toast.makeText(this, "File Exist", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(this, "File Not Existed", Toast.LENGTH_SHORT).show();
             }
             DownloadManager downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
 
-            Uri downloadUri = Uri.parse("https://www.channelsoft.com.my/signage/app-debug.apk");
+            Uri downloadUri = Uri.parse(downloadLink);
             DownloadManager.Request request = new DownloadManager.Request(downloadUri);
             request.setMimeType(MIME_TYPE);
             request.setTitle("Download");
@@ -617,20 +625,22 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     }
 
     private void setDownloadReceiver() {
-        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
-        downloadReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                long downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, 0L);
-                if (downloadId == downloadApkId) {
-                    Toast.makeText(context, "Installing...", Toast.LENGTH_SHORT).show();
-                    installAPK();
-                } else {
-                    downloadMediaFiles(downloadId);
+        if (downloadReceiver == null) {
+            IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+            downloadReceiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    long downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, 0L);
+                    if (downloadId == downloadApkId) {
+                        Toast.makeText(context, "Installing...", Toast.LENGTH_SHORT).show();
+                        installAPK();
+                    } else {
+                        downloadMediaFiles(downloadId);
+                    }
                 }
-            }
-        };
-        registerReceiver(downloadReceiver, filter);
+            };
+            registerReceiver(downloadReceiver, filter);
+        }
     }
 
     void downloadMediaFiles(long downloadId) {
@@ -639,6 +649,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         if (cursor.moveToFirst()) {
             int status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
             if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                Log.d("hahahaha", "Download Success!");
                 // add gallery into local database when download finished
                 addGalleryIntoLocal();
             } else {
@@ -669,7 +680,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     Uri uriFromFile(Context context, File file) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            return FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".provider", file);
+            return FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + PROVIDER_PATH, file);
         } else {
             return Uri.fromFile(file);
         }
@@ -677,6 +688,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
 
     private void addGalleryIntoLocal() {
         try {
+            Log.d("hahahaha", "Download File:" + displayObjectArrayList.get(checkingPosition).getPath());
             tbGallery.new Create("link_id, path, priority, gallery_id, display_type, timer, status, default_display, created_at, updated_at",
                     new String[]{
                             displayObjectArrayList.get(checkingPosition).getLinkID(),
@@ -757,8 +769,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         if (!videoView.isPlaying() && !timerRunning) {
             try {
                 if (!isNewDisplay) {
-                    //remove loading screen
-                    showProgressBar(false, "");
                     //screen orientation
                     setRequestedOrientation(playList.get(playPosition).getDisplayType().equals("0") ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
                     //path
@@ -1262,6 +1272,9 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             case R.id.previous_button:
                 checkPlayPosition(false, true);
                 break;
+            case R.id.check_version:
+                checkVersion();
+                break;
             default:
                 checkPlayPosition(true, true);
         }
@@ -1301,9 +1314,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
         dialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
             @Override
             public void onClick(SweetAlertDialog sweetAlertDialog) {
-                SharedPreferenceManager.clear(getApplicationContext());
-                startActivity(new Intent(getApplicationContext(), SettingActivity.class));
-                finish();
+                logOut();
                 dialog.dismissWithAnimation();
             }
         });
@@ -1314,6 +1325,102 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             }
         });
         dialog.show();
+    }
+
+    private void logOut() {
+        SharedPreferenceManager.clear(getApplicationContext());
+        startActivity(new Intent(getApplicationContext(), SettingActivity.class));
+        finish();
+    }
+
+    /*
+     * update device name
+     * */
+    public void checkVersion() {
+        CustomToast(getApplicationContext(), "Checking version...");
+        StringRequest stringRequest = new StringRequest(Request.Method.POST, version, new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+                try {
+                    Log.d("", "login json: " + response);
+                    JSONObject jsonObject = new JSONObject(response);
+                    if (jsonObject.getString("status").equals("1")) {
+                        String latestVersion = jsonObject.getJSONArray("version").getJSONObject(0).getString("version");
+                        String currentVersion = getVersion();
+                        if (!latestVersion.equals(currentVersion)) {
+                            downloadLink = jsonObject.getJSONArray("version").getJSONObject(0).getString("download_link");
+                            updateApkRequest();
+                        } else CustomToast(getApplicationContext(), "Version up to date!");
+                    }
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                    CustomToast(getApplicationContext(), "Something Went Wrong!");
+                }
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                CustomToast(getApplicationContext(), "Unable Connect to Api!");
+            }
+        }) {
+            @Override
+            protected Map<String, String> getParams() {
+                Map<String, String> params = new HashMap<>();
+                params.put("latest_version", "1");
+                return params;
+            }
+        };
+        MySingleton.getmInstance(this).addToRequestQueue(stringRequest);
+    }
+
+    private void updateApkRequest() {
+        final SweetAlertDialog dialog = new SweetAlertDialog(this, SweetAlertDialog.WARNING_TYPE);
+        dialog.setTitleText("New Version");
+        dialog.setContentText("An new release is available now. Are you sure to download now?");
+        dialog.setConfirmText("Confirm");
+        dialog.setCancelText("Cancel");
+        dialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
+            @Override
+            public void onClick(SweetAlertDialog sweetAlertDialog) {
+                downloadNewAPK();
+                dialog.dismissWithAnimation();
+            }
+        });
+        dialog.setCancelClickListener(new SweetAlertDialog.OnSweetClickListener() {
+            @Override
+            public void onClick(SweetAlertDialog sweetAlertDialog) {
+                dialog.dismissWithAnimation();
+            }
+        });
+        dialog.show();
+    }
+
+    private String getVersion() {
+        String version = "-";
+        try {
+            PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+            version = pInfo.versionName;
+        } catch (PackageManager.NameNotFoundException e) {
+            version = "-";
+            e.printStackTrace();
+        }
+        return version;
+    }
+
+    private void deviceError() {
+        final SweetAlertDialog pDialog = new SweetAlertDialog(MainActivity.this, SweetAlertDialog.ERROR_TYPE);
+        pDialog.setTitleText("Something Went Wrong");
+        pDialog.setContentText("Something error with this device! Please contact administrator for further support!");
+        pDialog.setConfirmText("I Got IT");
+        pDialog.setCancelable(false);
+        pDialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
+            @Override
+            public void onClick(SweetAlertDialog sweetAlertDialog) {
+                logOut();
+                pDialog.dismissWithAnimation();
+            }
+        });
+        pDialog.show();
     }
 
     //    --------------------------------------------------full screen-----------------------------------------------------------------------

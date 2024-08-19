@@ -1,12 +1,20 @@
 package com.jby.signage;
 
+import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.app.Activity;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
@@ -49,7 +57,11 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_setting);
         objectInitialize();
-        objectSetting();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
     }
 
     private void objectInitialize() {
@@ -58,6 +70,21 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
         progressBar = findViewById(R.id.progress_bar);
         versionName = findViewById(R.id.version_name);
         handler = new Handler();
+        //request permission to open launch app after reboot
+        requestAutoOpenApp();
+    }
+
+    private void requestAutoOpenApp() {
+        try {
+            //if not yet allow auto launch
+            if (!Settings.canDrawOverlays(this)) {
+                requestAutoLaunchDialog();
+            } else {
+                objectSetting();
+            }
+        } catch (Exception e) {
+            unableToLaunchAuto();
+        }
     }
 
     private void objectSetting() {
@@ -73,6 +100,16 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
         String version = "Power By Channel Soft \n" + "Version " + getVersion();
         versionName.setText(version);
     }
+
+    // You can do the assignment inside onAttach or onCreate, i.e, before the activity is displayed
+    ActivityResultLauncher<Intent> someActivityResultLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            new ActivityResultCallback<ActivityResult>() {
+                @Override
+                public void onActivityResult(ActivityResult result) {
+                    requestAutoOpenApp();
+                }
+            });
 
     @Override
     public boolean onEditorAction(TextView textView, int i, KeyEvent keyEvent) {
@@ -203,5 +240,50 @@ public class SettingActivity extends AppCompatActivity implements TextView.OnEdi
             e.printStackTrace();
         }
         return version;
+    }
+
+    private void unableToLaunchAuto() {
+        final SweetAlertDialog pDialog = new SweetAlertDialog(this, SweetAlertDialog.ERROR_TYPE);
+        pDialog.setTitleText("Unable to Auto Launch");
+        pDialog.setContentText("This device can't supports auto launch features.\nPlease contact administrator for further support.");
+        pDialog.setConfirmText("I Got IT");
+        pDialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
+            @Override
+            public void onClick(SweetAlertDialog sweetAlertDialog) {
+                pDialog.dismissWithAnimation();
+            }
+        });
+        pDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                finish();
+            }
+        });
+        pDialog.show();
+    }
+
+    private void requestAutoLaunchDialog() {
+        final SweetAlertDialog pDialog = new SweetAlertDialog(this, SweetAlertDialog.WARNING_TYPE);
+        pDialog.setTitleText("Auto Launch Request");
+        pDialog.setContentText("This app required auto launch permission to works perfectly.");
+        pDialog.setConfirmText("I Got It");
+        pDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                Intent intent = new Intent();
+                intent.setAction(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
+                someActivityResultLauncher.launch(intent);
+            }
+        });
+        pDialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
+            @Override
+            public void onClick(SweetAlertDialog sweetAlertDialog) {
+                Intent intent = new Intent();
+                intent.setAction(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
+                someActivityResultLauncher.launch(intent);
+                pDialog.dismissWithAnimation();
+            }
+        });
+        pDialog.show();
     }
 }

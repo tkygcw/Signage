@@ -12,8 +12,10 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SHUTDOWN" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
     <application
+        android:sharedUserId="android.uid.system"
         android:allowBackup="true"
         android:fullBackupContent="true"
         android:icon="@mipmap/logo"
@@ -45,6 +47,7 @@
         <receiver
             android:name=".alarm.AlarmReceiver"
             android:enabled="true" />
+
         <receiver
             android:name=".boot.BootReceiver"
             android:enabled="true"

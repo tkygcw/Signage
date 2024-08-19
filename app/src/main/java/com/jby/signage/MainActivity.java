@@ -350,11 +350,12 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                         /*
                          * check device status
                          * */
-                        String status = jsonObject.getJSONArray("device_status").getJSONObject(0).getString("status");
-                        if (!status.equals("0")) {
-                            deviceError();
-                            return;
-                        }
+                        checkDeviceStatus(jsonObject);
+//                        String status = jsonObject.getJSONArray("device_status").getJSONObject(0).getString("status");
+//                        if (!status.equals("0")) {
+//                            deviceError();
+//                            return;
+//                        }
                         /*
                          * default display
                          * */
@@ -401,6 +402,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
                                     });
                         }
                     } else {
+                        checkDeviceStatus(jsonObject);
                         //set refresh time to default when no data
                         refreshTime = 5000;
                         showProgressBar(true, "Data Not Found!");
@@ -439,6 +441,18 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
             }
         };
         MySingleton.getmInstance(this).addToRequestQueue(stringRequest);
+    }
+
+    private void checkDeviceStatus(JSONObject jsonObject) {
+        try {
+            String status = jsonObject.getJSONArray("device_status").getJSONObject(0).getString("status");
+            if (!status.equals("0")) {
+                deviceError();
+                return;
+            }
+        } catch (JSONException e) {
+            deviceError();
+        }
     }
 
     private void addNextDisplay(JSONObject jsonObject) {
@@ -1408,19 +1422,23 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCom
     }
 
     private void deviceError() {
-        final SweetAlertDialog pDialog = new SweetAlertDialog(MainActivity.this, SweetAlertDialog.ERROR_TYPE);
-        pDialog.setTitleText("Something Went Wrong");
-        pDialog.setContentText("Something error with this device! Please contact administrator for further support!");
-        pDialog.setConfirmText("I Got IT");
-        pDialog.setCancelable(false);
-        pDialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
-            @Override
-            public void onClick(SweetAlertDialog sweetAlertDialog) {
-                logOut();
-                pDialog.dismissWithAnimation();
-            }
-        });
-        pDialog.show();
+        try {
+            final SweetAlertDialog pDialog = new SweetAlertDialog(MainActivity.this, SweetAlertDialog.ERROR_TYPE);
+            pDialog.setTitleText("Something Went Wrong");
+            pDialog.setContentText("Something error with this device! Please contact administrator for further support!");
+            pDialog.setConfirmText("I Got IT");
+            pDialog.setCancelable(false);
+            pDialog.setConfirmClickListener(new SweetAlertDialog.OnSweetClickListener() {
+                @Override
+                public void onClick(SweetAlertDialog sweetAlertDialog) {
+                    logOut();
+                    pDialog.dismissWithAnimation();
+                }
+            });
+            pDialog.show();
+        } catch (Exception e) {
+
+        }
     }
 
     //    --------------------------------------------------full screen-----------------------------------------------------------------------
